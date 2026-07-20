@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # KnowledgeForge AI
 
 > **Transform conversations into secure, searchable knowledge.**
@@ -226,3 +227,7 @@ This project will be released under the **MIT License**.
 Built by **Agyapong Gyamfi** as an open-source project exploring AI infrastructure, cloud security, knowledge management, and production-grade software engineering.
 
 If this project helps you, consider starring the repository and contributing to its development.
+=======
+# knowledgeforge-ai
+An Open Source AI Knowledge management platform that turns conversations into structured knowledge. 
+>>>>>>> 3f1220de0af30ef8f24909bd1678711882a4b876
