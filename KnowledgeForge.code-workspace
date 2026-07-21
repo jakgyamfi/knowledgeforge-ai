@@ -1,0 +1,19 @@
+{
+  "folders": [{"name": "KnowledgeForge AI", "path": "."}],
+  "settings": {
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/.pytest_cache": true,
+      "**/*.egg-info": true,
+      "runtime": true
+    },
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": ["tests"],
+    "editor.formatOnSave": true,
+    "files.watcherExclude": {
+      "**/.venv/**": true,
+      "**/recordings/**": true,
+      "**/transcripts/**": true
+    }
+  }
+}

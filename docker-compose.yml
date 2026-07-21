@@ -1,0 +1,23 @@
+services:
+  knowledgeforge:
+    build: .
+    image: knowledgeforge-ai:local
+    ports:
+      # Bind to localhost by default. Add a secured reverse proxy before
+      # exposing the application on a VM or wider network.
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - ./runtime:/data
+      - whisper-models:/home/knowledgeforge/.cache/whisper
+    environment:
+      KF_WHISPER_MODEL: ${KF_WHISPER_MODEL:-base}
+      KF_LANGUAGE: ${KF_LANGUAGE:-}
+      KF_DEVICE: ${KF_DEVICE:-cpu}
+      KF_POLL_SECONDS: ${KF_POLL_SECONDS:-5}
+      KF_MAX_UPLOAD_MB: ${KF_MAX_UPLOAD_MB:-250}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  whisper-models:

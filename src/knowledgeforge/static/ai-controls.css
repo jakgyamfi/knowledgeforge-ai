@@ -1,0 +1,59 @@
+.captureGrid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 24px;
+  align-items: end;
+}
+
+.aiPicker {
+  display: grid;
+  grid-template-columns: 160px 190px auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.aiPicker label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.aiPicker select {
+  display: block;
+  margin-top: 4px;
+}
+
+.aiPicker small {
+  grid-column: 1 / -1;
+  text-align: right;
+}
+
+@media (max-width: 800px) {
+  .captureGrid,
+  .aiPicker {
+    grid-template-columns: 1fr;
+  }
+
+  .aiPicker small {
+    text-align: left;
+  }
+}
+
+.bookHero { margin-bottom: 18px; border-color: var(--accent); }
+.opportunityPanel{margin-bottom:18px}.opportunityGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:16px}.opportunity{background:#0b1713;border:1px solid var(--line);border-radius:10px;padding:15px}.opportunity>span{color:var(--accent);text-transform:uppercase;font-size:11px;letter-spacing:.12em}.opportunity h3{color:var(--accent2)}.opportunity small{display:block;color:var(--muted);margin-bottom:12px}
+.bookHead { display: flex; justify-content: space-between; gap: 18px; align-items: end; }
+.bookHead h2 { margin: 4px 0; font: 700 30px Georgia, serif; }
+.bookGrid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; margin-top: 20px; }
+.bookSections { display: grid; gap: 12px; max-height: 560px; overflow: auto; }
+.bookSection { background: #0b1713; border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.bookSection h3 { color: var(--accent2); margin: 0 0 8px; }
+.bookSection div { white-space: pre-wrap; }
+.bookSection small { display: block; color: var(--muted); margin-top: 10px; }
+.tools { margin-bottom: 18px; }
+.tools summary { cursor: pointer; font-weight: 700; color: var(--accent2); }
+.tools[open] summary { margin-bottom: 14px; }
+.aiBar { display: flex; justify-content: space-between; gap: 18px; align-items: center; margin-bottom: 18px; }
+
+@media (max-width: 900px) {
+  .bookGrid { grid-template-columns: 1fr; }
+  .bookHead, .aiBar { align-items: stretch; flex-direction: column; }
+}

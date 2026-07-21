@@ -1,0 +1,3 @@
+# Runtime dependencies are declared in pyproject.toml. Installing the editable
+# project keeps the CLI and web package synchronized with source changes.
+-e .

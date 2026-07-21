@@ -1,0 +1,10 @@
+{
+  "providers": [
+    {"id":"openai","label":"OpenAI","adapter":"openai","api_key_env":"OPENAI_API_KEY","models":["gpt-5.6-terra","gpt-5.6-luna","gpt-5.6-sol","gpt-5.6"]},
+    {"id":"anthropic","label":"Claude (Anthropic)","adapter":"anthropic","api_key_env":"ANTHROPIC_API_KEY","models":["claude-sonnet-4-20250514","claude-opus-4-20250514"]},
+    {"id":"ollama","label":"Ollama (local)","adapter":"ollama","base_url_env":"KF_OLLAMA_URL","models":[]},
+    {"id":"gemini","label":"Google Gemini","adapter":"openai_compatible","api_key_env":"GEMINI_API_KEY","base_url":"https://generativelanguage.googleapis.com/v1beta/openai/","models":["gemini-3.5-flash","gemini-flash-latest"]},
+    {"id":"kimi","label":"Kimi (Moonshot)","adapter":"openai_compatible","api_key_env":"MOONSHOT_API_KEY","base_url":"https://api.moonshot.ai/v1","models":["kimi-k3","kimi-k2.6","kimi-k2.7-code-highspeed"]},
+    {"id":"deepseek","label":"DeepSeek","adapter":"openai_compatible","api_key_env":"DEEPSEEK_API_KEY","base_url":"https://api.deepseek.com","models":["deepseek-v4-flash","deepseek-v4-pro"]}
+  ]
+}
