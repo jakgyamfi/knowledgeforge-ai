@@ -53,6 +53,24 @@ class ReorganizeRequest(BaseModel):
     feedback: str = Field(default="", max_length=50_000)
 
 
+class TaskCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    details: str = Field(default="", max_length=5000)
+    priority: str = Field(default="medium", pattern="^(critical|high|medium|low)$")
+    estimate_minutes: int = Field(default=30, ge=5, le=10080)
+    target_date: str = Field(default="", max_length=10)
+
+
+class TaskUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    details: str | None = Field(default=None, max_length=5000)
+    status: str | None = Field(default=None, pattern="^(todo|doing|done|dismissed)$")
+    priority: str | None = Field(default=None, pattern="^(critical|high|medium|low)$")
+    estimate_minutes: int | None = Field(default=None, ge=5, le=10080)
+    target_date: str | None = Field(default=None, max_length=10)
+    position: int | None = Field(default=None, ge=0)
+
+
 def _safe_filename(filename: str) -> str:
     name = Path(filename or "recording.webm").name
     return re.sub(r"[^A-Za-z0-9._ -]+", "-", name).strip(" .-") or "recording.webm"
@@ -112,7 +130,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="KnowledgeForge AI",
-        version="0.4.1",
+        version="0.5.0",
         description=(
             "Security-first AI idea orchestration for developing private, unstructured source material "
             "into books, business opportunities, and projects."
@@ -182,6 +200,41 @@ def create_app() -> FastAPI:
         except Exception as exc:
             logging.exception("Book reorganization failed")
             raise HTTPException(502, "Book reorganization failed; see private log.") from exc
+
+    @app.get("/api/projects/{project_id}/tasks")
+    def project_tasks(project_id: int):
+        try:
+            library.get_book(project_id)
+        except KeyError as exc:
+            raise HTTPException(404, "Workspace not found") from exc
+        return library.list_tasks(project_id)
+
+    @app.post("/api/projects/{project_id}/tasks", status_code=201)
+    def create_task(project_id: int, payload: TaskCreate):
+        try:
+            library.get_book(project_id)
+        except KeyError as exc:
+            raise HTTPException(404, "Workspace not found") from exc
+        return library.add_task(project_id, **payload.model_dump())
+
+    @app.patch("/api/projects/{project_id}/tasks/{task_id}")
+    def update_task(project_id: int, task_id: int, payload: TaskUpdate):
+        task = library.update_task(project_id, task_id, payload.model_dump(exclude_unset=True))
+        if task is None:
+            raise HTTPException(404, "Task not found")
+        return task
+
+    @app.post("/api/projects/{project_id}/tasks/replan")
+    def replan_tasks(project_id: int):
+        try:
+            return ai.refresh_plan(project_id, reason="Owner requested a fresh execution plan")
+        except KeyError as exc:
+            raise HTTPException(404, "Workspace not found") from exc
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except Exception as exc:
+            logging.exception("Execution-plan refresh failed")
+            raise HTTPException(502, "Execution-plan refresh failed; see private log.") from exc
 
     @app.get("/api/books/{project_id}/export")
     def export_book(project_id: int):

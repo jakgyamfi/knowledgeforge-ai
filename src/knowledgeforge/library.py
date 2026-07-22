@@ -56,6 +56,17 @@ class Library:
                 description TEXT NOT NULL, rationale TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'new',
                 created_at TEXT NOT NULL)"""
             )
+            db.execute(
+                """CREATE TABLE IF NOT EXISTS project_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL REFERENCES projects(id),
+                title TEXT NOT NULL, details TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'todo', priority TEXT NOT NULL DEFAULT 'medium',
+                position INTEGER NOT NULL DEFAULT 0, estimate_minutes INTEGER NOT NULL DEFAULT 30,
+                target_date TEXT NOT NULL DEFAULT '', dependencies TEXT NOT NULL DEFAULT '[]',
+                source TEXT NOT NULL DEFAULT 'ai', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"""
+            )
+            db.execute("CREATE INDEX IF NOT EXISTS idx_project_tasks_project ON project_tasks(project_id,position)")
             db.execute("""CREATE TABLE IF NOT EXISTS projects (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE,
                 description TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)""")
@@ -168,6 +179,105 @@ class Library:
                 (project_id, limit),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def list_tasks(self, project_id: int) -> list[dict[str, Any]]:
+        """Return the living execution plan in its current AI/user-defined order."""
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT * FROM project_tasks WHERE project_id=?
+                ORDER BY CASE status WHEN 'doing' THEN 0 WHEN 'todo' THEN 1 WHEN 'done' THEN 2 ELSE 3 END,
+                position,id""",
+                (project_id,),
+            ).fetchall()
+        items = []
+        for row in rows:
+            item = dict(row)
+            try:
+                item["dependencies"] = json.loads(item["dependencies"] or "[]")
+            except json.JSONDecodeError:
+                item["dependencies"] = []
+            items.append(item)
+        return items
+
+    def add_task(
+        self,
+        project_id: int,
+        *,
+        title: str,
+        details: str = "",
+        priority: str = "medium",
+        estimate_minutes: int = 30,
+        target_date: str = "",
+    ) -> dict[str, Any]:
+        """Add an owner-authored task. AI replanning never deletes manual tasks."""
+        with self._connect() as db:
+            position = int(
+                db.execute(
+                    "SELECT COALESCE(MAX(position),-1)+1 FROM project_tasks WHERE project_id=?", (project_id,)
+                ).fetchone()[0]
+            )
+            cursor = db.execute(
+                """INSERT INTO project_tasks(project_id,title,details,priority,position,estimate_minutes,
+                target_date,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'manual',?,?)""",
+                (
+                    project_id,
+                    title.strip(),
+                    details.strip(),
+                    priority,
+                    position,
+                    estimate_minutes,
+                    target_date,
+                    _now(),
+                    _now(),
+                ),
+            )
+            task_id = int(cursor.lastrowid)
+        return next(item for item in self.list_tasks(project_id) if item["id"] == task_id)
+
+    def update_task(self, project_id: int, task_id: int, values: dict[str, Any]) -> dict[str, Any] | None:
+        allowed = {"title", "details", "status", "priority", "estimate_minutes", "target_date", "position"}
+        changes = {key: value for key, value in values.items() if key in allowed and value is not None}
+        if not changes:
+            return next((item for item in self.list_tasks(project_id) if item["id"] == task_id), None)
+        assignments = ",".join(f"{key}=?" for key in changes)
+        with self._connect() as db:
+            result = db.execute(
+                f"UPDATE project_tasks SET {assignments},updated_at=? WHERE id=? AND project_id=?",
+                (*changes.values(), _now(), task_id, project_id),
+            )
+        if result.rowcount != 1:
+            return None
+        return next(item for item in self.list_tasks(project_id) if item["id"] == task_id)
+
+    def replace_ai_tasks(self, project_id: int, tasks: list[dict[str, Any]]) -> None:
+        """Replace open AI suggestions while preserving completed and owner-authored work."""
+        with self._connect() as db:
+            db.execute("DELETE FROM project_tasks WHERE project_id=? AND source='ai' AND status!='done'", (project_id,))
+            completed = {
+                str(row[0]).strip().casefold()
+                for row in db.execute(
+                    "SELECT title FROM project_tasks WHERE project_id=? AND status='done'", (project_id,)
+                ).fetchall()
+            }
+            for position, task in enumerate(tasks):
+                if task["title"].strip().casefold() in completed:
+                    continue
+                db.execute(
+                    """INSERT INTO project_tasks(project_id,title,details,status,priority,position,estimate_minutes,
+                    target_date,dependencies,source,created_at,updated_at) VALUES(?,?,?,'todo',?,?,?,?,?,'ai',?,?)""",
+                    (
+                        project_id,
+                        task["title"].strip(),
+                        task.get("details", "").strip(),
+                        task.get("priority", "medium"),
+                        position,
+                        int(task.get("estimate_minutes", 30)),
+                        task.get("target_date", ""),
+                        json.dumps(task.get("dependencies", [])),
+                        _now(),
+                        _now(),
+                    ),
+                )
 
     @staticmethod
     def _row(row: sqlite3.Row | None) -> dict[str, Any] | None:

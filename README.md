@@ -51,6 +51,9 @@ KnowledgeForge can:
 - extract titles, summaries, tags, people, characters, scenes, themes, decisions, tasks, risks, deadlines, questions, and opportunities;
 - classify ideas as book, business, project, personal, meeting, or journal material;
 - integrate new material into a versioned working document;
+- maintain a living, prioritized execution plan with dependencies, estimates, and proposed target dates;
+- automatically replan open AI tasks as new voice, text, document, or image material is integrated;
+- preserve completed work and owner-created tasks during AI replanning;
 - reorganize workspaces from persistent owner instructions and feedback;
 - search and ask questions across the private source library;
 - run on Windows today, in Docker, or on a private Linux host.
@@ -117,6 +120,7 @@ logs/                        private operational logs (gitignored)
 - [About and origin story](docs/ABOUT.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [AI and workspace workflow](docs/AI-AND-WRITER-WORKFLOW.md)
+- [Living execution plans](docs/PRODUCTIVITY-WORKFLOW.md)
 - [Provider configuration](docs/PROVIDERS.md)
 - [Setup and operation](docs/SETUP.md)
 - [Docker deployment](docs/DOCKER-DEPLOYMENT.md)

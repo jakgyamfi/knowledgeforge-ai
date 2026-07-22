@@ -52,6 +52,18 @@
 .tools summary { cursor: pointer; font-weight: 700; color: var(--accent2); }
 .tools[open] summary { margin-bottom: 14px; }
 .aiBar { display: flex; justify-content: space-between; gap: 18px; align-items: center; margin-bottom: 18px; }
+.taskPanel { margin-bottom: 18px; }
+.taskList { display: grid; gap: 9px; margin-top: 16px; }
+.task { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; background: #0b1713; border: 1px solid var(--line); border-radius: 11px; padding: 12px; }
+.task.done { opacity: .62; }
+.task.done strong { text-decoration: line-through; }
+.task p { margin: 4px 0; color: var(--muted); }
+.taskCheck { width: 38px; height: 38px; padding: 0; border-radius: 50%; font-size: 20px; }
+.priority { text-transform: uppercase; font-size: 10px; letter-spacing: .1em; font-weight: 700; }
+.priority.critical { color: #ff8b8b; }
+.priority.high { color: #f2bc72; }
+.priority.medium { color: var(--accent); }
+.priority.low { color: var(--muted); }
 
 @media (max-width: 900px) {
   .bookGrid { grid-template-columns: 1fr; }

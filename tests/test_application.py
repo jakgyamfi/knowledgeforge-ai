@@ -147,3 +147,33 @@ def test_local_organizer_is_deterministic() -> None:
     )
     assert result["summary"].endswith("hidden journal.")
     assert "mara" in result["tags"]
+
+
+def test_living_plan_preserves_manual_and_completed_tasks(tmp_path: Path) -> None:
+    library = Library(tmp_path / "library.db")
+    project_id = library.ensure_project("Launch", workspace_type="project")
+    manual = library.add_task(project_id, title="Confirm the scope", estimate_minutes=45)
+    library.replace_ai_tasks(
+        project_id,
+        [{"title": "Build prototype", "priority": "high", "estimate_minutes": 120, "dependencies": []}],
+    )
+    generated = next(task for task in library.list_tasks(project_id) if task["source"] == "ai")
+    library.update_task(project_id, generated["id"], {"status": "done"})
+
+    library.replace_ai_tasks(
+        project_id,
+        [
+            {"title": "Build prototype", "priority": "high", "estimate_minutes": 120, "dependencies": []},
+            {
+                "title": "Document rollout",
+                "priority": "medium",
+                "estimate_minutes": 60,
+                "dependencies": ["Build prototype"],
+            },
+        ],
+    )
+    tasks = library.list_tasks(project_id)
+    assert next(task for task in tasks if task["id"] == manual["id"])["source"] == "manual"
+    assert len([task for task in tasks if task["title"] == "Build prototype"]) == 1
+    assert next(task for task in tasks if task["title"] == "Build prototype")["status"] == "done"
+    assert next(task for task in tasks if task["title"] == "Document rollout")["estimate_minutes"] == 60

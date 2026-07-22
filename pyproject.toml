@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "knowledgeforge-ai"
-version = "0.4.1"
+version = "0.5.0"
 description = "Security-first AI idea orchestration for turning private, unstructured captures into evolving books, businesses, and projects."
 readme = "README.md"
 license = "MIT"

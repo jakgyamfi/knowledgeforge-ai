@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import urllib.request
 import base64
 import mimetypes
+from datetime import date
 from pathlib import Path
 from typing import Literal, TypeVar
 
@@ -76,6 +78,20 @@ class ManuscriptSection(BaseModel):
 class ManuscriptDraft(BaseModel):
     change_summary: str
     sections: list[ManuscriptSection]
+
+
+class PlanTask(BaseModel):
+    title: str
+    details: str = ""
+    priority: Literal["critical", "high", "medium", "low"] = "medium"
+    estimate_minutes: int = Field(default=30, ge=5, le=10080)
+    target_date: str = ""
+    dependencies: list[str] = Field(default_factory=list)
+
+
+class ExecutionPlan(BaseModel):
+    planning_note: str
+    tasks: list[PlanTask]
 
 
 Schema = TypeVar("Schema", bound=BaseModel)
@@ -375,7 +391,45 @@ class AIService:
         self.library.replace_book(
             project_id, result["sections"], reason=result["change_summary"] or feedback, trigger_note_id=trigger_note_id
         )
+        # Content integration and execution planning are one workflow. Library
+        # preserves completed and owner-authored tasks during this refresh.
+        try:
+            self.refresh_plan(project_id, reason=feedback or "New source material integrated")
+        except Exception:
+            # A planning-provider failure must not roll back a successfully
+            # integrated manuscript or project document.
+            logging.exception("Automatic execution-plan refresh failed for project %s", project_id)
         return self.library.get_book(project_id)
+
+    def refresh_plan(self, project_id: int, *, reason: str = "Workspace updated") -> dict:
+        """Create an ordered, time-estimated plan from current workspace evidence."""
+        book = self.library.get_book(project_id)
+        notes = self.library.context_notes(project_id, limit=50)
+        current_tasks = self.library.list_tasks(project_id)
+        workspace = "\n\n".join(f"## {s['title']}\n{s['content']}" for s in book["sections"])
+        evidence = "\n\n".join(f"[Note {n['id']}] {n['summary']}\n{n['transcript'][:4000]}" for n in notes)
+        task_state = json.dumps(
+            [
+                {k: task[k] for k in ("title", "status", "priority", "estimate_minutes", "target_date", "source")}
+                for task in current_tasks
+            ],
+            indent=2,
+        )
+        plan = self._structured(
+            [
+                {
+                    "role": "system",
+                    "content": "Act as a cautious execution planner. Convert supported workspace material into concrete, ordered tasks. Prioritize outcomes and dependencies, give realistic effort estimates in minutes, and use ISO YYYY-MM-DD target dates only when evidence supports a deadline or a useful proposed schedule. Never invent commitments. Keep tasks small enough to complete and omit vague busywork. Existing completed and manual tasks are authoritative.",
+                },
+                {
+                    "role": "user",
+                    "content": f"TODAY: {date.today().isoformat()}\nREPLAN REASON: {reason}\nWORKSPACE: {book['project']['name']} ({book['project']['workspace_type']})\nOWNER DIRECTION:\n{book['instructions']}\n\nCURRENT WORK:\n{workspace[:60000]}\n\nSOURCE EVIDENCE:\n{evidence[:90000]}\n\nCURRENT TASK STATE:\n{task_state}",
+                },
+            ],
+            ExecutionPlan,
+        ).model_dump()
+        self.library.replace_ai_tasks(project_id, plan["tasks"])
+        return {"planning_note": plan["planning_note"], "tasks": self.library.list_tasks(project_id)}
 
     def answer(self, question: str, project_id: int | None = None, selected_ids: list[int] | None = None) -> dict:
         notes = (
