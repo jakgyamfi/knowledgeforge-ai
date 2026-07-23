@@ -1,6 +1,6 @@
 # Stops only the process recorded by the companion start script.
 $ErrorActionPreference = "Stop"
-$ProjectRoot = "B:\iCloud\KnowledgeForge"
+$ProjectRoot = Split-Path -Parent $PSScriptRoot
 $PidFile = Join-Path $ProjectRoot "logs\knowledgeforge.pid"
 
 if (-not (Test-Path -LiteralPath $PidFile)) {

@@ -47,7 +47,7 @@ KnowledgeForge can:
 - detect new files and transcribe supported audio locally with Whisper;
 - preserve the original recording and clean transcript;
 - ingest text, Markdown, PDF, Word, and image files;
-- use OpenAI, Claude, Gemini, Kimi, DeepSeek, or local Ollama models;
+- use Z.ai, OpenAI, Claude, xAI/Grok, Meta Llama API, Gemini, Kimi, DeepSeek, or local Ollama models;
 - extract titles, summaries, tags, people, characters, scenes, themes, decisions, tasks, risks, deadlines, questions, and opportunities;
 - classify ideas as book, business, project, personal, meeting, or journal material;
 - integrate new material into a versioned working document;
@@ -87,17 +87,24 @@ knowledgeforge serve
 
 Open <http://127.0.0.1:8765>. Record or upload directly, or copy audio into the configured `Inbox`. The worker will transcribe it and the active AI provider can analyze and integrate it automatically.
 
+Pending analysis is event-driven: it runs when the application starts with a
+configured provider, when an API key is saved, when the active provider/model
+changes, and whenever new source material arrives. **Process pending now** is
+available as a recovery control. Failed provider calls do not delete or modify
+the preserved source recording or transcript.
+
 For the complete setup, iCloud workflow, FFmpeg verification, desktop launchers, Docker, and troubleshooting, see [Setup](docs/SETUP.md).
 
 ## AI providers
 
-Provider definitions live in `config/ai-providers.json`; secrets belong only in `.env.providers`. The interface exposes the configured providers and models without putting credentials in the browser or repository.
+Provider definitions live in `config/ai-providers.json`. KnowledgeForge uses one explicitly selected secret backend: Windows Credential Manager/DPAPI on a native Windows desktop, read-only mounted files for Linux/Docker/cloud, or environment variables in compatibility mode. The interface reports readiness without returning credentials to the browser or storing them in the repository or database.
 
 ```powershell
-Copy-Item .env.providers.example .env.providers
+# On native Windows, use "Add or manage API keys" in the application.
+knowledgeforge secrets set openai  # equivalent CLI operation
 ```
 
-Configure one or more providers, restart KnowledgeForge, and choose the active AI from the application. See [Provider Configuration](docs/PROVIDERS.md).
+The desktop input disables autocomplete, clears immediately, and never receives the stored value back. Configure one or more providers, then choose the active AI from the application. See [Secret Storage](docs/SECRET-STORAGE.md) and [Provider Configuration](docs/PROVIDERS.md).
 
 ## Repository map
 
@@ -122,6 +129,7 @@ logs/                        private operational logs (gitignored)
 - [AI and workspace workflow](docs/AI-AND-WRITER-WORKFLOW.md)
 - [Living execution plans](docs/PRODUCTIVITY-WORKFLOW.md)
 - [Provider configuration](docs/PROVIDERS.md)
+- [Secret storage](docs/SECRET-STORAGE.md)
 - [Setup and operation](docs/SETUP.md)
 - [Docker deployment](docs/DOCKER-DEPLOYMENT.md)
 - [Cloud/SaaS upgrade runbook](docs/CLOUD-SAAS-RUNBOOK.md)

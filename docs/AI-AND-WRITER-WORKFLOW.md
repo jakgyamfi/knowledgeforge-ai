@@ -10,7 +10,11 @@ KnowledgeForge keeps Whisper transcription local. When an AI provider is configu
 4. Optionally change `KF_DEFAULT_PROJECT` and `KF_AI_MODEL`.
 5. Restart KnowledgeForge from the desktop shortcut.
 
-The status line should say **AI ready**. Existing transcripts show **pending** and can be processed with **Analyze with AI**. New transcripts are analyzed and filed automatically.
+The status line should show the selected provider as ready. Existing pending or
+failed transcripts are queued automatically at startup, after a provider key is
+saved, or after the provider/model changes. New transcripts are analyzed and
+filed automatically. Use **Process pending now** only as a recovery control;
+**Analyze and integrate** retries one selected source.
 
 The provider and model selectors at the top of the application switch the active AI immediately—no restart is required. The selection is stored in the private SQLite database. API keys remain only in `.env`; they are never returned to the browser.
 

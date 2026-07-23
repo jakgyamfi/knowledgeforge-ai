@@ -16,6 +16,7 @@ temp/
 tmp/
 cache/
 database/
+secrets/
 databases/
 db/
 vector_db/
@@ -28,6 +29,7 @@ indexes/
 .env.providers
 .env.*
 !.env.example
+runtime.env
 *.pem
 *.key
 *.pfx

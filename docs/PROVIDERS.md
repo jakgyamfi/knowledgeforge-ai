@@ -1,23 +1,26 @@
 # AI provider catalog
 
-Provider and model choices live in `config/ai-providers.json`. It contains no secrets. API keys stay in the private `.env.providers` file. KnowledgeForge loads both `.env` and `.env.providers`.
+Provider and model choices live in `config/ai-providers.json`. It contains no secrets. Store API keys through the configured [secret-storage backend](SECRET-STORAGE.md).
 
 Included adapters:
 
+- Z.ai through its OpenAI-compatible API
 - OpenAI
 - Claude through Anthropic's native API
+- xAI/Grok through its OpenAI-compatible API
+- Meta through the first-party Llama API
 - local Ollama
 - Google Gemini, Kimi, and DeepSeek through their OpenAI-compatible APIs
 
-Copy `.env.providers.example` to `.env.providers`, add the matching key, restart once so the server reads the new environment, then select the provider and model in the interface:
+The reviewed fallback model catalog is dated in `config/ai-providers.json`. After a provider key is configured, KnowledgeForge attempts to query that provider's model-list endpoint and uses the live compatible list. If discovery is unavailable, the reviewed fallback remains visible.
 
-```env
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-GEMINI_API_KEY=
-MOONSHOT_API_KEY=
-DEEPSEEK_API_KEY=
-KF_OLLAMA_URL=http://127.0.0.1:11434
+The July 22, 2026 review added Z.ai GLM-5.2, Gemini 3.1 Pro Preview, the current Claude family, xAI Grok 4.5, and Meta Llama 4 API models. Only language/chat models suitable for KnowledgeForge's analysis workflow belong in this catalog; image-only, audio-only, embedding, and deprecated models are intentionally omitted.
+
+Store the required key, restart KnowledgeForge, then select the provider and model in the interface:
+
+```powershell
+knowledgeforge secrets set openai
+knowledgeforge secrets list
 ```
 
 ## Add another compatible provider
@@ -35,4 +38,4 @@ Add an entry to `config/ai-providers.json`:
 }
 ```
 
-Then add `PROVIDER_API_KEY` to `.env` and restart KnowledgeForge. The existing provider dropdown discovers the entry automatically; no interface code change is required.
+Then run `knowledgeforge secrets set provider-id` and restart KnowledgeForge. The existing provider dropdown discovers the entry automatically; no interface code change is required.

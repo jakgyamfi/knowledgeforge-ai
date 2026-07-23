@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
+import re
 import urllib.request
 import base64
 import mimetypes
@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from .config import Settings
 from .library import Library
+from .secrets import ProviderSecrets
 
 
 class Character(BaseModel):
@@ -102,8 +103,10 @@ class AIService:
 
     def __init__(self, settings: Settings, library: Library) -> None:
         self.settings, self.library = settings, library
+        self.secrets = ProviderSecrets()
         self._openai_client = None
         self._anthropic_client = None
+        self._meta_client = None
         self._compatible_clients: dict[str, object] = {}
 
     @property
@@ -117,7 +120,7 @@ class AIService:
     @property
     def enabled(self) -> bool:
         config = self._provider_config()
-        return config.get("adapter") == "ollama" or bool(os.getenv(config.get("api_key_env", "")))
+        return config.get("adapter") == "ollama" or bool(self.secrets.get(config.get("api_key_env", "")))
 
     def _catalog(self) -> list[dict]:
         try:
@@ -140,10 +143,77 @@ class AIService:
                 models, configured = self._ollama_models()
                 provider["models"] = models or item.get("models", [])
             else:
-                configured = bool(os.getenv(item.get("api_key_env", "")))
+                configured = bool(self.secrets.get(item.get("api_key_env", "")))
+                if configured and item.get("discover_models"):
+                    provider["models"] = self._discover_models(item) or item.get("models", [])
             provider["configured"] = configured
             providers.append(provider)
         return {"selected": {"provider": self.provider, "model": self.model}, "providers": providers}
+
+    def _discover_models(self, config: dict) -> list[str]:
+        """Query a provider's model endpoint, falling back silently to reviewed IDs."""
+        try:
+            adapter = config.get("adapter")
+            key = self.secrets.get(config.get("api_key_env", ""))
+            if adapter in {"openai", "openai_compatible"}:
+                from openai import OpenAI
+
+                kwargs = {"api_key": key, "timeout": 4.0}
+                if adapter == "openai_compatible":
+                    kwargs["base_url"] = config["base_url"]
+                entries = OpenAI(**kwargs).models.list().data
+            elif adapter == "anthropic":
+                from anthropic import Anthropic
+
+                entries = Anthropic(api_key=key, timeout=4.0).models.list(limit=100).data
+            elif adapter == "meta_llama":
+                from llama_api_client import LlamaAPIClient
+
+                response = LlamaAPIClient(api_key=key, timeout=4.0).models.list()
+                entries = getattr(response, "data", response)
+            else:
+                return []
+            ids = [str(getattr(entry, "id", "")) for entry in entries]
+            reviewed = config.get("models", [])
+            prefixes = {model.split("-", 1)[0].lower() for model in reviewed}
+            return sorted({model for model in ids if model and model.split("-", 1)[0].lower() in prefixes})
+        except Exception:
+            return []
+
+    def secret_status(self) -> dict:
+        """Expose credential presence and backend without exposing values."""
+        providers = []
+        for item in self._catalog():
+            if name := item.get("api_key_env"):
+                providers.append(
+                    {
+                        "id": item["id"],
+                        "label": item["label"],
+                        "configured": bool(self.secrets.get(name)),
+                        "source": self.secrets.source(name),
+                    }
+                )
+        return {"backend": self.secrets.backend, "writable": self.secrets.writable, "providers": providers}
+
+    def set_secret(self, provider_id: str, value: str) -> dict:
+        item = next((entry for entry in self._catalog() if entry.get("id") == provider_id), None)
+        if not item or not item.get("api_key_env"):
+            raise KeyError(provider_id)
+        self.secrets.set(item["api_key_env"], value)
+        self._openai_client = None
+        self._anthropic_client = None
+        self._compatible_clients.pop(provider_id, None)
+        return self.secret_status()
+
+    def delete_secret(self, provider_id: str) -> dict:
+        item = next((entry for entry in self._catalog() if entry.get("id") == provider_id), None)
+        if not item or not item.get("api_key_env"):
+            raise KeyError(provider_id)
+        self.secrets.delete(item["api_key_env"])
+        self._openai_client = None
+        self._anthropic_client = None
+        self._compatible_clients.pop(provider_id, None)
+        return self.secret_status()
 
     def _ollama_models(self) -> tuple[list[str], bool]:
         try:
@@ -166,6 +236,18 @@ class AIService:
         with urllib.request.urlopen(request, timeout=600) as response:
             return str(json.loads(response.read())["message"]["content"])
 
+    def _meta_chat(self, messages: list[dict[str, str]]) -> str:
+        """Call Meta's first-party Llama API and normalize its content shape."""
+        if self._meta_client is None:
+            from llama_api_client import LlamaAPIClient
+
+            self._meta_client = LlamaAPIClient(api_key=self.secrets.get("LLAMA_API_KEY"))
+        response = self._meta_client.chat.completions.create(model=self.model, messages=messages)
+        content = getattr(response.completion_message, "content", "")
+        if isinstance(content, str):
+            return content
+        return "".join(str(getattr(item, "text", "")) for item in content)
+
     def _structured(self, messages: list[dict[str, str]], schema: type[Schema]) -> Schema:
         if not self.enabled:
             raise RuntimeError(
@@ -174,11 +256,20 @@ class AIService:
         adapter = self._provider_config().get("adapter", self.provider)
         if adapter == "ollama":
             return schema.model_validate_json(self._ollama_chat(messages, schema.model_json_schema()))
+        if adapter == "meta_llama":
+            schema_prompt = messages + [
+                {
+                    "role": "user",
+                    "content": "Return only JSON matching this schema exactly:\n"
+                    + json.dumps(schema.model_json_schema()),
+                }
+            ]
+            return self._validate_structured_content(self._meta_chat(schema_prompt), schema)
         if adapter == "anthropic":
             if self._anthropic_client is None:
                 from anthropic import Anthropic
 
-                self._anthropic_client = Anthropic(api_key=self.settings.anthropic_api_key)
+                self._anthropic_client = Anthropic(api_key=self.secrets.get("ANTHROPIC_API_KEY"))
             response = self._anthropic_client.messages.create(
                 model=self.model,
                 max_tokens=16000,
@@ -201,7 +292,7 @@ class AIService:
             if client is None:
                 from openai import OpenAI
 
-                client = OpenAI(api_key=os.getenv(config["api_key_env"]), base_url=config["base_url"])
+                client = OpenAI(api_key=self.secrets.get(config["api_key_env"]), base_url=config["base_url"])
                 self._compatible_clients[self.provider] = client
             schema_prompt = messages + [
                 {
@@ -213,15 +304,37 @@ class AIService:
             response = client.chat.completions.create(
                 model=self.model, messages=schema_prompt, response_format={"type": "json_object"}
             )
-            return schema.model_validate_json(response.choices[0].message.content)
+            return self._validate_structured_content(response.choices[0].message.content, schema)
         if self._openai_client is None:
             from openai import OpenAI
 
-            self._openai_client = OpenAI(api_key=self.settings.openai_api_key)
+            self._openai_client = OpenAI(api_key=self.secrets.get("OPENAI_API_KEY"))
         response = self._openai_client.responses.parse(model=self.model, input=messages, text_format=schema)
         if response.output_parsed is None:
             raise RuntimeError("AI returned no structured result")
         return response.output_parsed
+
+    @staticmethod
+    def _validate_structured_content(content: str | None, schema: type[Schema]) -> Schema:
+        """Validate provider JSON, including common compatibility wrappers.
+
+        Some OpenAI-compatible providers return the requested object directly.
+        Others, including some GLM endpoints, wrap the serialized object in an
+        ``answer`` property. Normalizing that transport difference here keeps
+        the rest of KnowledgeForge provider-neutral.
+        """
+        if not content:
+            raise RuntimeError("AI returned no structured result")
+        candidate = content.strip()
+        if candidate.startswith("```"):
+            candidate = re.sub(r"^```(?:json)?\s*|\s*```$", "", candidate, flags=re.IGNORECASE)
+        parsed = json.loads(candidate)
+        if isinstance(parsed, dict) and isinstance(parsed.get("answer"), str):
+            nested = parsed["answer"].strip()
+            if nested.startswith("```"):
+                nested = re.sub(r"^```(?:json)?\s*|\s*```$", "", nested, flags=re.IGNORECASE)
+            parsed = json.loads(nested)
+        return schema.model_validate(parsed)
 
     def _text(self, system: str, user: str) -> str:
         if not self.enabled:
@@ -231,11 +344,13 @@ class AIService:
         adapter = self._provider_config().get("adapter", self.provider)
         if adapter == "ollama":
             return self._ollama_chat([{"role": "system", "content": system}, {"role": "user", "content": user}])
+        if adapter == "meta_llama":
+            return self._meta_chat([{"role": "system", "content": system}, {"role": "user", "content": user}])
         if adapter == "anthropic":
             if self._anthropic_client is None:
                 from anthropic import Anthropic
 
-                self._anthropic_client = Anthropic(api_key=self.settings.anthropic_api_key)
+                self._anthropic_client = Anthropic(api_key=self.secrets.get("ANTHROPIC_API_KEY"))
             response = self._anthropic_client.messages.create(
                 model=self.model, max_tokens=16000, system=system, messages=[{"role": "user", "content": user}]
             )
@@ -246,7 +361,7 @@ class AIService:
             if client is None:
                 from openai import OpenAI
 
-                client = OpenAI(api_key=os.getenv(config["api_key_env"]), base_url=config["base_url"])
+                client = OpenAI(api_key=self.secrets.get(config["api_key_env"]), base_url=config["base_url"])
                 self._compatible_clients[self.provider] = client
             response = client.chat.completions.create(
                 model=self.model, messages=[{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -255,7 +370,7 @@ class AIService:
         if self._openai_client is None:
             from openai import OpenAI
 
-            self._openai_client = OpenAI(api_key=self.settings.openai_api_key)
+            self._openai_client = OpenAI(api_key=self.secrets.get("OPENAI_API_KEY"))
         return self._openai_client.responses.create(model=self.model, instructions=system, input=user).output_text
 
     def describe_image(self, path: Path) -> str:
@@ -282,11 +397,15 @@ class AIService:
             )
             with urllib.request.urlopen(request, timeout=600) as response:
                 return str(json.loads(response.read())["message"]["content"])
+        if adapter == "meta_llama":
+            raise RuntimeError(
+                "Image analysis is not yet enabled for the Meta Llama API adapter; import text or audio."
+            )
         if adapter == "anthropic":
             if self._anthropic_client is None:
                 from anthropic import Anthropic
 
-                self._anthropic_client = Anthropic(api_key=self.settings.anthropic_api_key)
+                self._anthropic_client = Anthropic(api_key=self.secrets.get("ANTHROPIC_API_KEY"))
             response = self._anthropic_client.messages.create(
                 model=self.model,
                 max_tokens=8000,
@@ -305,7 +424,7 @@ class AIService:
             config = self._provider_config()
             from openai import OpenAI
 
-            client = OpenAI(api_key=os.getenv(config["api_key_env"]), base_url=config["base_url"])
+            client = OpenAI(api_key=self.secrets.get(config["api_key_env"]), base_url=config["base_url"])
             response = client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -322,7 +441,7 @@ class AIService:
         if self._openai_client is None:
             from openai import OpenAI
 
-            self._openai_client = OpenAI(api_key=self.settings.openai_api_key)
+            self._openai_client = OpenAI(api_key=self.secrets.get("OPENAI_API_KEY"))
         response = self._openai_client.responses.create(
             model=self.model,
             input=[

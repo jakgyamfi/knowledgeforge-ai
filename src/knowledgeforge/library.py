@@ -444,6 +444,23 @@ class Library:
                 (error[:1000], _now(), note_id),
             )
 
+    def pending_analysis_ids(self, limit: int = 100) -> list[int]:
+        """Return unfinished notes oldest-first so the queue is predictable.
+
+        Both ``pending`` and ``failed`` notes are included. A failed note is not
+        retried continuously; callers invoke this queue only at deliberate
+        recovery points such as startup, saving a key, changing providers, or
+        pressing "Process pending now".
+        """
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT id FROM notes
+                WHERE analysis_status!='complete'
+                ORDER BY created_at ASC, id ASC LIMIT ?""",
+                (max(1, min(limit, 500)),),
+            ).fetchall()
+        return [int(row["id"]) for row in rows]
+
     def context_notes(self, project_id: int | None = None, query: str = "", limit: int = 30):
         return self.list_notes(query=query, project_id=project_id, limit=limit)
 

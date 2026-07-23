@@ -6,13 +6,14 @@ import mimetypes
 import re
 import threading
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from .ai import AIService
 from .config import Settings
 from .library import Library
@@ -43,6 +44,10 @@ class ChatRequest(BaseModel):
 class AISelection(BaseModel):
     provider: str = Field(min_length=1, max_length=80, pattern="^[a-z0-9_-]+$")
     model: str = Field(min_length=1, max_length=120)
+
+
+class ProviderSecret(BaseModel):
+    api_key: SecretStr
 
 
 class BookInstructions(BaseModel):
@@ -89,6 +94,55 @@ def create_app() -> FastAPI:
     ai = AIService(settings, library)
     stop_event = threading.Event()
     worker = threading.Thread(target=pipeline.watch, args=(stop_event,), name="knowledgeforge-watcher", daemon=True)
+    analysis_lock = threading.Lock()
+    analysis_queue = {"running": False, "last": None}
+
+    def process_pending_analysis() -> dict[str, int | bool | str | None]:
+        """Drain unfinished analysis once without overlapping another drain.
+
+        This function is intentionally event-driven rather than a tight retry
+        loop. That prevents a bad key or provider outage from repeatedly
+        consuming tokens. Startup, key save, model selection, and the recovery
+        button are the supported retry events.
+        """
+        if not analysis_lock.acquire(blocking=False):
+            return {"accepted": False, "processed": 0, "failed": 0, "message": "Analysis queue is already running."}
+        analysis_queue["running"] = True
+        processed = failed = 0
+        try:
+            if not ai.enabled:
+                return {
+                    "accepted": False,
+                    "processed": 0,
+                    "failed": 0,
+                    "message": "The selected AI provider is not configured.",
+                }
+            for note_id in library.pending_analysis_ids():
+                try:
+                    organized = ai.analyze(note_id)
+                    project_id = organized.get("project_id")
+                    if project_id and library.get_setting("auto_integrate", "true") == "true":
+                        ai.reorganize_book(project_id, trigger_note_id=note_id)
+                    processed += 1
+                except Exception as exc:
+                    failed += 1
+                    library.mark_analysis_failed(note_id, str(exc))
+                    logging.exception("Queued AI analysis failed for note %s", note_id)
+            return {"accepted": True, "processed": processed, "failed": failed, "message": "Queue pass complete."}
+        finally:
+            analysis_queue["running"] = False
+            analysis_queue["last"] = datetime.now(timezone.utc).isoformat()
+            analysis_lock.release()
+
+    def start_pending_analysis() -> None:
+        """Run a queue pass in a daemon so API requests return immediately."""
+        if analysis_queue["running"] or not ai.enabled or not library.pending_analysis_ids(limit=1):
+            return
+        threading.Thread(
+            target=process_pending_analysis,
+            name="knowledgeforge-analysis-queue",
+            daemon=True,
+        ).start()
 
     def process_import(path: Path) -> None:
         """Extract imported documents/images, then run the same organization workflow as audio."""
@@ -124,13 +178,14 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         worker.start()
+        start_pending_analysis()
         yield
         stop_event.set()
         worker.join(timeout=max(settings.poll_seconds + 2, 10))
 
     app = FastAPI(
         title="KnowledgeForge AI",
-        version="0.5.0",
+        version="0.7.1",
         description=(
             "Security-first AI idea orchestration for developing private, unstructured source material "
             "into books, business opportunities, and projects."
@@ -153,6 +208,10 @@ def create_app() -> FastAPI:
             "ai_enabled": ai.enabled,
             "ai_provider": ai.provider,
             "ai_model": ai.model,
+            "analysis_queue": {
+                "running": analysis_queue["running"],
+                "last": analysis_queue["last"],
+            },
         }
 
     @app.get("/api/ai/options")
@@ -160,7 +219,7 @@ def create_app() -> FastAPI:
         return ai.options()
 
     @app.put("/api/ai/selection")
-    def select_ai(payload: AISelection):
+    def select_ai(payload: AISelection, background: BackgroundTasks):
         options = ai.options()
         provider = next((item for item in options["providers"] if item["id"] == payload.provider), None)
         if provider is None:
@@ -171,7 +230,38 @@ def create_app() -> FastAPI:
             raise HTTPException(422, "Unsupported catalog model")
         library.set_settings({"ai_provider": payload.provider, "ai_model": payload.model.strip()})
         logging.info("AI selection changed to %s / %s", payload.provider, payload.model)
+        background.add_task(start_pending_analysis)
         return ai.options()
+
+    @app.get("/api/secrets/status")
+    def secret_status():
+        return ai.secret_status()
+
+    @app.put("/api/secrets/{provider_id}")
+    def save_provider_secret(provider_id: str, payload: ProviderSecret, background: BackgroundTasks):
+        if settings.web_host not in {"127.0.0.1", "localhost", "::1"}:
+            raise HTTPException(403, "In-app secret entry is allowed only on a loopback-bound desktop instance.")
+        try:
+            status = ai.set_secret(provider_id, payload.api_key.get_secret_value())
+            # If this key belongs to the active provider, old notes created
+            # before configuration are now eligible for automatic analysis.
+            background.add_task(start_pending_analysis)
+            return status
+        except KeyError as exc:
+            raise HTTPException(404, "Provider does not accept an API key") from exc
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.delete("/api/secrets/{provider_id}")
+    def delete_provider_secret(provider_id: str):
+        if settings.web_host not in {"127.0.0.1", "localhost", "::1"}:
+            raise HTTPException(403, "In-app secret management is allowed only on a loopback-bound desktop instance.")
+        try:
+            return ai.delete_secret(provider_id)
+        except KeyError as exc:
+            raise HTTPException(404, "Provider does not accept an API key") from exc
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @app.get("/api/books/{project_id}")
     def get_book(project_id: int):
@@ -316,6 +406,17 @@ def create_app() -> FastAPI:
             library.mark_analysis_failed(note_id, str(exc))
             logging.exception("Analysis failed")
             raise HTTPException(502, "AI analysis failed; details are in the private log.") from exc
+
+    @app.post("/api/analysis/process-pending", status_code=202)
+    def process_pending(background: BackgroundTasks):
+        if not ai.enabled:
+            raise HTTPException(409, "Configure and select an AI provider first.")
+        background.add_task(start_pending_analysis)
+        return {
+            "accepted": True,
+            "pending": library.stats()["pending_analysis"],
+            "running": analysis_queue["running"],
+        }
 
     @app.post("/api/notes/{note_id}/organize")
     def local_organize(note_id: int):

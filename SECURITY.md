@@ -25,7 +25,8 @@ Include the affected version, impact, reproducible steps, and a safe proof of co
 
 - Bind to `127.0.0.1` unless remote access has been intentionally secured.
 - The local application has no authentication. Do not expose it directly to the internet or an untrusted LAN.
-- Keep `.env` and `.env.providers` outside Git and restrict their filesystem permissions.
+- Store native Windows provider keys through KnowledgeForge's Credential Manager/DPAPI backend. Use the separate read-only file backend in Linux, containers, and cloud deployments.
+- Keep compatibility `.env` and `.env.providers` files outside Git and restrict their filesystem permissions.
 - Never commit `Inbox`, recordings, transcripts, summaries, personal or business material, databases, or logs.
 - Review staged files and generated archives before every push or release.
 - Keep Windows, Python, FFmpeg, Whisper, model runtimes, and dependencies patched.

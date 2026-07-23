@@ -8,8 +8,13 @@ services:
       - "127.0.0.1:8765:8765"
     volumes:
       - ./runtime:/data
+      # LLM Secrets reads provider keys from this read-only mount. The host
+      # directory is gitignored and may remain empty when using Ollama.
+      - ./secrets:/run/secrets:ro
       - whisper-models:/home/knowledgeforge/.cache/whisper
     environment:
+      KF_SECRET_BACKEND: file
+      KF_SECRETS_DIR: /run/secrets
       KF_WHISPER_MODEL: ${KF_WHISPER_MODEL:-base}
       KF_LANGUAGE: ${KF_LANGUAGE:-}
       KF_DEVICE: ${KF_DEVICE:-cpu}

@@ -1,18 +1,47 @@
 {
+  "verified_at": "2026-07-22",
   "providers": [
+    {
+      "id": "zai",
+      "label": "Z.ai",
+      "adapter": "openai_compatible",
+      "api_key_env": "ZAI_API_KEY",
+      "base_url": "https://api.z.ai/api/paas/v4/",
+      "discover_models": true,
+      "models": ["glm-5.2", "glm-5.1", "glm-5", "glm-5-turbo", "glm-4.7", "glm-4.6", "glm-4.5"]
+    },
     {
       "id": "openai",
       "label": "OpenAI",
       "adapter": "openai",
       "api_key_env": "OPENAI_API_KEY",
-      "models": ["gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6"]
+      "discover_models": true,
+      "models": ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6-terra"]
     },
     {
       "id": "anthropic",
       "label": "Claude (Anthropic)",
       "adapter": "anthropic",
       "api_key_env": "ANTHROPIC_API_KEY",
-      "models": ["claude-sonnet-4-20250514", "claude-opus-4-20250514"]
+      "discover_models": true,
+      "models": ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"]
+    },
+    {
+      "id": "xai",
+      "label": "xAI (Grok)",
+      "adapter": "openai_compatible",
+      "api_key_env": "XAI_API_KEY",
+      "base_url": "https://api.x.ai/v1",
+      "discover_models": true,
+      "models": ["grok-4.5", "grok-4.3", "grok-4.20-0309-reasoning", "grok-4.20-0309-non-reasoning", "grok-4.20-multi-agent-0309"]
+    },
+    {
+      "id": "meta",
+      "label": "Meta Llama API",
+      "adapter": "meta_llama",
+      "api_key_env": "LLAMA_API_KEY",
+      "discover_models": true,
+      "models": ["Llama-4-Maverick-17B-128E-Instruct-FP8", "Llama-4-Scout-17B-16E-Instruct-FP8"]
     },
     {
       "id": "ollama",
@@ -27,7 +56,8 @@
       "adapter": "openai_compatible",
       "api_key_env": "GEMINI_API_KEY",
       "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-      "models": ["gemini-3.5-flash", "gemini-flash-latest"]
+      "discover_models": true,
+      "models": ["gemini-3.1-pro-preview", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
     },
     {
       "id": "kimi",
@@ -35,7 +65,8 @@
       "adapter": "openai_compatible",
       "api_key_env": "MOONSHOT_API_KEY",
       "base_url": "https://api.moonshot.ai/v1",
-      "models": ["kimi-k3", "kimi-k2.6", "kimi-k2.7-code-highspeed"]
+      "discover_models": true,
+      "models": ["kimi-k2.5", "kimi-k2-thinking", "kimi-k2-turbo-preview"]
     },
     {
       "id": "deepseek",
@@ -43,7 +74,8 @@
       "adapter": "openai_compatible",
       "api_key_env": "DEEPSEEK_API_KEY",
       "base_url": "https://api.deepseek.com",
-      "models": ["deepseek-v4-flash", "deepseek-v4-pro"]
+      "discover_models": true,
+      "models": ["deepseek-v4-pro", "deepseek-v4-flash"]
     }
   ]
 }

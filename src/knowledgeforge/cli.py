@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import getpass
+import json
 import logging
 import shutil
 import sys
@@ -11,6 +13,41 @@ from pathlib import Path
 from .config import Settings
 from .library import Library
 from .pipeline import TranscriptionPipeline
+from .secrets import ProviderSecrets, SecretStoreError
+
+
+def _provider_secret(settings: Settings, provider: str) -> str:
+    """Resolve a friendly provider ID to its configured credential name."""
+    catalog = json.loads(settings.provider_catalog.read_text(encoding="utf-8"))
+    item = next((item for item in catalog["providers"] if item["id"] == provider.lower()), None)
+    if not item or not item.get("api_key_env"):
+        raise SecretStoreError(f"Provider '{provider}' has no API-key entry in the provider catalog.")
+    return str(item["api_key_env"])
+
+
+def manage_secrets(settings: Settings, action: str, provider: str | None) -> int:
+    """Manage credentials without accepting values in command history."""
+    store = ProviderSecrets()
+    if action == "list":
+        catalog = json.loads(settings.provider_catalog.read_text(encoding="utf-8"))
+        for item in catalog["providers"]:
+            if name := item.get("api_key_env"):
+                print(f"{item['id']}: {store.source(name)}")
+        return 0
+    if not provider:
+        raise SecretStoreError("A provider is required for set or delete.")
+    name = _provider_secret(settings, provider)
+    if action == "set":
+        value = getpass.getpass(f"Enter {provider} API key (input hidden): ")
+        confirmation = getpass.getpass("Enter it again: ")
+        if value != confirmation:
+            raise SecretStoreError("The two values did not match; nothing was saved.")
+        store.set(name, value)
+        print(f"Stored {provider} in the OS credential manager.")
+        return 0
+    deleted = store.delete(name)
+    print(f"Deleted {provider}." if deleted else f"No OS-stored secret exists for {provider}.")
+    return 0
 
 
 def configure_logging(settings: Settings, verbose: bool = False) -> None:
@@ -68,6 +105,9 @@ def parser() -> argparse.ArgumentParser:
     batch.add_argument("--overwrite", action="store_true")
     commands.add_parser("watch", help="Run the foreground folder watcher.")
     commands.add_parser("serve", help="Run the web app and watcher together.")
+    secrets = commands.add_parser("secrets", help="Manage provider keys in LLM Secrets.")
+    secrets.add_argument("action", choices=("set", "list", "delete"))
+    secrets.add_argument("provider", nargs="?", help="Provider ID, such as openai or anthropic.")
     return root
 
 
@@ -75,6 +115,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     settings = Settings.load()
     configure_logging(settings, args.verbose)
+    if args.command == "secrets":
+        try:
+            return manage_secrets(settings, args.action, args.provider)
+        except SecretStoreError as exc:
+            print(f"Secret operation failed: {exc}", file=sys.stderr)
+            return 2
     if args.command == "verify":
         return verify(settings)
     pipeline = TranscriptionPipeline(settings, Library(settings.database))

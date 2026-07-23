@@ -1,7 +1,7 @@
 # Starts KnowledgeForge in the foreground so operational logs remain visible.
 # This script is used by the desktop shortcut and can also be run directly.
 $ErrorActionPreference = "Stop"
-$ProjectRoot = "B:\iCloud\KnowledgeForge"
+$ProjectRoot = Split-Path -Parent $PSScriptRoot
 $Executable = Join-Path $ProjectRoot ".venv\Scripts\knowledgeforge.exe"
 $PidFile = Join-Path $ProjectRoot "logs\knowledgeforge.pid"
 

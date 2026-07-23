@@ -52,6 +52,11 @@
 .tools summary { cursor: pointer; font-weight: 700; color: var(--accent2); }
 .tools[open] summary { margin-bottom: 14px; }
 .aiBar { display: flex; justify-content: space-between; gap: 18px; align-items: center; margin-bottom: 18px; }
+.secretPanel { margin-bottom: 18px; }
+.secretProviders { display: grid; gap: 9px; margin-top: 14px; }
+.secretRow { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(260px, 2fr) auto auto; gap: 9px; align-items: center; background: #0b1713; border-radius: 10px; padding: 10px; }
+.secretRow strong, .secretRow small { display: block; }
+.secretRow small { color: var(--muted); }
 .taskPanel { margin-bottom: 18px; }
 .taskList { display: grid; gap: 9px; margin-top: 16px; }
 .task { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; background: #0b1713; border: 1px solid var(--line); border-radius: 11px; padding: 12px; }
@@ -68,4 +73,5 @@
 @media (max-width: 900px) {
   .bookGrid { grid-template-columns: 1fr; }
   .bookHead, .aiBar { align-items: stretch; flex-direction: column; }
+  .secretRow { grid-template-columns: 1fr; }
 }
