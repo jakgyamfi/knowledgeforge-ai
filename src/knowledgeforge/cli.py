@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .config import Settings
 from .library import Library
+from .logging_config import configure_private_logging
 from .pipeline import TranscriptionPipeline
 from .secrets import ProviderSecrets, SecretStoreError
 
@@ -51,15 +52,12 @@ def manage_secrets(settings: Settings, action: str, provider: str | None) -> int
 
 
 def configure_logging(settings: Settings, verbose: bool = False) -> None:
-    """Log to both the terminal and a private rotating-ready file location."""
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler(settings.logs / "knowledgeforge.log", encoding="utf-8"),
-        ],
-        force=True,
+    """Log privately with automatic size rotation and gzip compression."""
+    configure_private_logging(
+        settings.logs,
+        verbose=verbose,
+        max_mb=settings.log_max_mb,
+        backups=settings.log_backups,
     )
 
 

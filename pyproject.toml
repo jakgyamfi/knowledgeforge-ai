@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "knowledgeforge-ai"
-version = "0.7.1"
+version = "0.11.0"
 description = "Security-first AI idea orchestration for turning private, unstructured captures into evolving books, businesses, and projects."
 readme = "README.md"
 license = "MIT"
@@ -39,7 +39,7 @@ knowledgeforge = "knowledgeforge.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-knowledgeforge = ["static/*", "ai-providers.json"]
+knowledgeforge = ["static/*", "manuals/*", "ai-providers.json"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "ruff>=0.9,<1.0"]

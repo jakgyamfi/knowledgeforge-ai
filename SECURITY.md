@@ -28,6 +28,8 @@ Include the affected version, impact, reproducible steps, and a safe proof of co
 - Store native Windows provider keys through KnowledgeForge's Credential Manager/DPAPI backend. Use the separate read-only file backend in Linux, containers, and cloud deployments.
 - Keep compatibility `.env` and `.env.providers` files outside Git and restrict their filesystem permissions.
 - Never commit `Inbox`, recordings, transcripts, summaries, personal or business material, databases, or logs.
+- Uploaded CVs and extracted profile text are private runtime data under the ignored imports/database paths.
+- Opportunity web validation is owner-initiated. Search queries use only the opportunity title and profile location, not the CV or private source text.
 - Review staged files and generated archives before every push or release.
 - Keep Windows, Python, FFmpeg, Whisper, model runtimes, and dependencies patched.
 - Back up private workspaces separately from the public source repository.

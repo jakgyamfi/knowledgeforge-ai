@@ -83,6 +83,8 @@ class Settings:
     anthropic_api_key: str | None
     provider_catalog: Path
     imports: Path
+    log_max_mb: int = 10
+    log_backups: int = 10
 
     @classmethod
     def load(cls) -> "Settings":
@@ -113,6 +115,8 @@ class Settings:
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY") or None,
             provider_catalog=_path(root, os.getenv("KF_AI_PROVIDER_CATALOG", "config/ai-providers.json")),
             imports=_path(root, os.getenv("KF_IMPORTS_DIR", "imports")),
+            log_max_mb=int(os.getenv("KF_LOG_MAX_MB", "10")),
+            log_backups=int(os.getenv("KF_LOG_BACKUPS", "10")),
         )
         settings.ensure_directories()
         return settings

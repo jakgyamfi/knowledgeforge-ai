@@ -79,6 +79,29 @@ def test_library_search_and_update(tmp_path: Path) -> None:
     assert library.get_note(note_id)["project_name"] == "Novel"
 
 
+def test_workspace_can_be_renamed_contextualized_and_deleted_without_losing_sources(tmp_path: Path) -> None:
+    library = Library(tmp_path / "library.db")
+    project_id = library.ensure_project("Draft Venture", workspace_type="business")
+    note_id = library.upsert_transcript(
+        source_name="market-note.txt",
+        audio_path=tmp_path / "market-note.txt",
+        transcript_path=tmp_path / "market-note-transcript.txt",
+        transcript="Customer evidence.",
+        project_id=project_id,
+    )
+    library.add_workspace_card(project_id, "evidence", "First signal", "Interview evidence")
+    updated = library.update_project(
+        project_id,
+        name="Security Venture",
+        description="Build an evidence-led security product with measurable adoption.",
+    )
+    assert updated["name"] == "Security Venture"
+    assert updated["description"].startswith("Build an evidence-led")
+    assert library.delete_project(project_id)
+    assert library.get_note(note_id)["project_id"] is None
+    assert library.get_note(note_id)["transcript"] == "Customer evidence."
+
+
 def test_structured_analysis_is_saved_without_losing_transcript(tmp_path: Path) -> None:
     library = Library(tmp_path / "library.db")
     note_id = library.upsert_transcript(
@@ -134,6 +157,21 @@ def test_compatible_provider_structured_response_wrappers() -> None:
     assert (direct.title, wrapped.title, fenced.title) == ("Direct", "Wrapped", "Fenced")
 
 
+def test_compatible_provider_repairs_invalid_backslash_escape() -> None:
+    repaired = AIService._validate_structured_content(
+        r'{"title":"Draft stored in C:\KnowledgeForge\drafts"}',
+        StructuredFixture,
+    )
+    assert repaired.title == r"Draft stored in C:\KnowledgeForge\drafts"
+
+
+def test_workspace_research_rejects_local_and_private_urls() -> None:
+    assert not AIService._public_url("http://127.0.0.1:8765/private")
+    assert not AIService._public_url("http://localhost/private")
+    assert not AIService._public_url("file:///etc/passwd")
+    assert not AIService._public_url("https://user:password@example.com/private")
+
+
 def test_pending_analysis_queue_is_oldest_first(tmp_path: Path) -> None:
     library = Library(tmp_path / "library.db")
     first = library.upsert_transcript(
@@ -150,6 +188,157 @@ def test_pending_analysis_queue_is_oldest_first(tmp_path: Path) -> None:
     )
     library.mark_analysis_failed(first, "temporary provider error")
     assert library.pending_analysis_ids() == [first, second]
+
+
+def test_private_profile_requires_explicit_update(tmp_path: Path) -> None:
+    library = Library(tmp_path / "library.db")
+    profile = library.update_profile(
+        {
+            "display_name": "Writer",
+            "location": "United States",
+            "skills": ["Cloud security", "Writing", "Cloud security"],
+            "interests": ["AI infrastructure"],
+            "suggestions": {"skills": ["Threat modeling"]},
+        }
+    )
+    assert profile["skills"] == ["Cloud security", "Writing"]
+    assert profile["suggestions"]["skills"] == ["Threat modeling"]
+    # Suggestions remain separate until the owner deliberately updates skills.
+    assert "Threat modeling" not in profile["skills"]
+
+
+def test_profile_lists_preserve_owner_order_and_commas(tmp_path: Path) -> None:
+    library = Library(tmp_path / "library.db")
+    goals = [
+        "Move income from $85,000 to $250,000+",
+        "Publish a book and sell 100,000 copies",
+        "Buy a house by December 2027",
+    ]
+    profile = library.update_profile({"goals": goals})
+    assert profile["goals"] == goals
+
+
+def test_profile_cv_path_is_available_to_server_but_not_required_for_older_databases(tmp_path: Path) -> None:
+    database = tmp_path / "library.db"
+    library = Library(database)
+    cv = tmp_path / "imports" / "profile" / "private-cv.pdf"
+    cv.parent.mkdir(parents=True)
+    cv.write_bytes(b"private")
+    profile = library.update_profile(
+        {"cv_filename": "cv.pdf", "cv_path": str(cv), "cv_text": "Private extracted text"}
+    )
+    assert profile["cv_path"] == str(cv)
+    assert profile["cv_text"] == "Private extracted text"
+    assert Library(database).get_profile()["cv_filename"] == "cv.pdf"
+
+
+def test_growth_sync_uses_goals_not_certification_inventory(tmp_path: Path) -> None:
+    library = Library(tmp_path / "library.db")
+    library.update_profile(
+        {
+            "goals": ["Move into cloud security by December 2026", "CCSP (ISC2) - In Progress"],
+            "certifications": ["Terraform Associate - In Progress"],
+            "suggestions": {"certifications": ["CCSP (ISC2) - In Progress", "AWS Security Specialty"]},
+        }
+    )
+    items = library.sync_growth_from_profile()
+    by_title = {item["title"]: item for item in items}
+    assert by_title["CCSP (ISC2) - In Progress"]["status"] == "in_progress"
+    assert "Terraform Associate - In Progress" not in by_title
+    assert "AWS Security Specialty" not in by_title  # Unapproved, non-active suggestion stays out.
+    assert by_title["Move into cloud security by December 2026"]["status"] == "active"
+
+
+def test_growth_plan_preserves_completed_actions_and_aggregates_workspace_tasks(tmp_path: Path) -> None:
+    library = Library(tmp_path / "library.db")
+    library.update_profile({"goals": ["Publish the first book"]})
+    item = library.sync_growth_from_profile()[0]
+    library.replace_ai_growth_actions(
+        [
+            {
+                "item_title": item["title"],
+                "title": "Draft the outline",
+                "details": "Create the first outline.",
+                "priority": "high",
+                "estimate_minutes": 45,
+            }
+        ]
+    )
+    action = library.list_growth_actions()[0]
+    library.update_growth_action(action["id"], {"status": "done"})
+    library.replace_ai_growth_actions(
+        [{"item_title": item["title"], "title": "Draft the outline", "estimate_minutes": 45}]
+    )
+    project_id = library.ensure_project("Book", workspace_type="book")
+    library.add_task(project_id, title="Review chapter one", estimate_minutes=30)
+    overview = library.growth_overview()
+    assert [action["status"] for action in overview["actions"]] == ["done"]
+    assert overview["items"][0]["progress"] == 90
+    assert overview["items"][0]["done_actions"] == 1
+    assert overview["workspace_tasks"][0]["title"] == "Review chapter one"
+    assert overview["metrics"]["open_actions"] == 1
+
+
+def test_purpose_specific_workspace_cards_and_completion(tmp_path: Path) -> None:
+    library = Library(tmp_path / "library.db")
+    project_id = library.ensure_project("Community Program", workspace_type="impact")
+    library.add_workspace_card(project_id, "outcomes", "Improved access", "Owner-authored outcome")
+    library.replace_workspace_cards(
+        project_id,
+        [{"collection": "indicators", "title": "Participation", "content": "Measure attendance"}],
+    )
+    library.replace_workspace_cards(
+        project_id,
+        [{"collection": "risks", "title": "Access barrier", "content": "Track exclusions"}],
+    )
+    cards = library.list_workspace_cards(project_id)
+    assert any(card["title"] == "Improved access" for card in cards)
+    assert not any(card["title"] == "Participation" for card in cards)
+    assert any(card["title"] == "Access barrier" for card in cards)
+
+    task = library.add_task(project_id, title="Publish outcome report")
+    library.update_task(project_id, task["id"], {"status": "done"})
+    completed = library.complete_workspace(project_id, {"outcome_summary": "Report published"})
+    assert completed["project"]["status"] == "completed"
+    assert completed["completion"]["review"]["outcome_summary"] == "Report published"
+    assert library.reopen_workspace(project_id)["project"]["status"] == "active"
+
+
+def test_profile_opportunity_refresh_preserves_saved_ideas(tmp_path: Path) -> None:
+    library = Library(tmp_path / "library.db")
+    note_id = library.upsert_transcript(
+        source_name="idea.txt",
+        audio_path=tmp_path / "idea.txt",
+        transcript_path=tmp_path / "idea-transcript.txt",
+        transcript="Create a security workshop.",
+    )
+    library.replace_profile_opportunities(
+        [
+            {
+                "kind": "business",
+                "title": "Security workshop",
+                "description": "A practical workshop",
+                "rationale": "Supported by experience",
+                "score": 80,
+                "evidence": [note_id],
+            }
+        ]
+    )
+    opportunity = library.list_opportunities()[0]
+    library.update_opportunity(opportunity["id"], status="saved")
+    library.replace_profile_opportunities(
+        [
+            {
+                "kind": "learning",
+                "title": "Research facilitation",
+                "description": "Build facilitation skill",
+                "rationale": "Closes a gap",
+                "evidence": [note_id],
+            }
+        ]
+    )
+    assert library.list_opportunities("saved")[0]["title"] == "Security workshop"
+    assert library.list_opportunities("new")[0]["title"] == "Research facilitation"
 
 
 def test_opportunity_can_be_promoted_to_workspace(tmp_path: Path) -> None:

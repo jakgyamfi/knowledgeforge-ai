@@ -4,6 +4,12 @@
 
 KnowledgeForge is a security-first, local-first AI idea orchestration platform. It turns scattered voice notes, documents, and images into structured books, business opportunities, project plans, and searchable private knowledge.
 
+Its workspace accelerator adapts to the work: books receive a reader promise,
+themes, outline, chapter briefs, continuity questions, research gaps, and
+writing actions; ventures receive hypotheses, evidence, experiments, success
+measures, milestones, and tasks; impact, career, and general projects receive
+their own outcome-oriented structures.
+
 The application preserves the original source, transcribes audio locally with Whisper, and sends the resulting text through a deliberately configured AI orchestration layer. The selected model can classify the idea, extract themes and opportunities, integrate it into an evolving workspace, and reorganize that workspace as its owner gives new direction.
 
 ## Why KnowledgeForge exists
@@ -53,9 +59,19 @@ KnowledgeForge can:
 - integrate new material into a versioned working document;
 - maintain a living, prioritized execution plan with dependencies, estimates, and proposed target dates;
 - automatically replan open AI tasks as new voice, text, document, or image material is integrated;
+- maintain a private profile and CV that guide evidence-based opportunity discovery;
+- propose careers, ventures, books, projects, learning, collaborations, and impact opportunities;
+- validate selected opportunities against current public web evidence only after owner approval;
+- adapt each accepted idea into a Book, Venture, Impact, Project, or flexible Idea Studio;
+- rename, contextualize, or delete workspaces while preserving original source records;
+- research owner-approved questions against public web evidence and retain URL-cited findings only after review;
+- accelerate a complete workspace into purpose-specific structure, measurable outcomes, and ordered next actions;
+- improve selected material using the complete workspace context before adding the result;
+- build focused two-, four-, or twelve-week portfolio plans;
+- preserve completion snapshots and suggest evidence-supported profile updates for owner approval;
 - preserve completed work and owner-created tasks during AI replanning;
 - reorganize workspaces from persistent owner instructions and feedback;
-- search and ask questions across the private source library;
+- search and ask questions across imported documents, images, transcripts, living documents, studio cards, owner direction, and execution plans;
 - run on Windows today, in Docker, or on a private Linux host.
 
 ## Security-first by design
@@ -129,10 +145,15 @@ logs/                        private operational logs (gitignored)
 - [AI and workspace workflow](docs/AI-AND-WRITER-WORKFLOW.md)
 - [Living execution plans](docs/PRODUCTIVITY-WORKFLOW.md)
 - [Provider configuration](docs/PROVIDERS.md)
+- [Opportunity intelligence and specialized studios](docs/OPPORTUNITY-AND-STUDIOS.md)
+- [User manual](docs/USER-MANUAL.md)
+- [Private logging and outbound audit](docs/LOGGING.md)
+- [Product-pattern research](docs/PRODUCT-RESEARCH.md)
 - [Secret storage](docs/SECRET-STORAGE.md)
 - [Setup and operation](docs/SETUP.md)
 - [Docker deployment](docs/DOCKER-DEPLOYMENT.md)
 - [Cloud/SaaS upgrade runbook](docs/CLOUD-SAAS-RUNBOOK.md)
+- [Release history](CHANGELOG.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 
 ## Project status
@@ -144,6 +165,19 @@ KnowledgeForge is an evolving portfolio project and usable local application. It
 Built by [Agyapong Gyamfi](https://agyaponggyamfi.com/) while exploring secure AI orchestration, private knowledge systems, MCP infrastructure, and production-grade cloud security.
 
 Contributions and thoughtful security feedback are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+
+## Private logs and outbound audit
+
+KnowledgeForge creates `logs/knowledgeforge.log` for operations and
+`logs/egress-audit.jsonl` for metadata-only outbound AI/research events. Neither
+log intentionally stores prompts, transcripts, model responses, authorization
+headers, or API keys. At 10 MB by default, each log starts a new file and
+gzip-compresses the previous segment. Configure size and retention with
+`KF_LOG_MAX_MB` and `KF_LOG_BACKUPS`. The entire `logs/` directory is gitignored.
+
+Cloud AI endpoints and public research use HTTPS. Public research refuses HTTP,
+credentialed URLs, and private, loopback, or link-local destinations. Ollama is
+the explicit local exception and defaults to `http://127.0.0.1:11434`.
 
 ## License
 

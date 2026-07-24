@@ -29,6 +29,7 @@ indexes/
 .env.providers
 .env.*
 !.env.example
+!.env.providers.example
 runtime.env
 *.pem
 *.key

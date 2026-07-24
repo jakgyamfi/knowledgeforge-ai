@@ -8,7 +8,7 @@ import threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import uuid4
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
@@ -32,7 +32,47 @@ class NoteUpdate(BaseModel):
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=2000)
-    workspace_type: str = Field(default="book", pattern="^(book|business|project|general)$")
+    workspace_type: str = Field(default="book", pattern="^(book|business|impact|project|general)$")
+
+
+class ProjectUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=10_000)
+
+
+class ProfileUpdate(BaseModel):
+    display_name: str = Field(default="", max_length=200)
+    location: str = Field(default="", max_length=200)
+    headline: str = Field(default="", max_length=500)
+    summary: str = Field(default="", max_length=20_000)
+    skills: list[str] = Field(default_factory=list, max_length=300)
+    certifications: list[str] = Field(default_factory=list, max_length=100)
+    interests: list[str] = Field(default_factory=list, max_length=200)
+    goals: list[str] = Field(default_factory=list, max_length=100)
+    industries: list[str] = Field(default_factory=list, max_length=100)
+    avoid: list[str] = Field(default_factory=list, max_length=100)
+    preferences: dict = Field(default_factory=dict)
+
+
+class OpportunityAction(BaseModel):
+    status: str = Field(pattern="^(new|saved|dismissed)$")
+
+
+class WorkspaceCardCreate(BaseModel):
+    collection: str = Field(min_length=1, max_length=80, pattern="^[a-z0-9_-]+$")
+    title: str = Field(min_length=1, max_length=300)
+    content: str = Field(default="", max_length=50_000)
+    metadata: dict = Field(default_factory=dict)
+
+
+class WorkspaceCardUpdate(BaseModel):
+    collection: str = Field(min_length=1, max_length=80, pattern="^[a-z0-9_-]+$")
+    title: str = Field(min_length=1, max_length=300)
+    content: str = Field(default="", max_length=50_000)
+
+
+class CompletionConfirm(BaseModel):
+    confirmed: bool
 
 
 class ChatRequest(BaseModel):
@@ -58,6 +98,19 @@ class ReorganizeRequest(BaseModel):
     feedback: str = Field(default="", max_length=50_000)
 
 
+class WorkspaceResearchRequest(BaseModel):
+    query: str = Field(min_length=3, max_length=2000)
+
+
+class WorkspaceImproveRequest(BaseModel):
+    selection: str = Field(min_length=3, max_length=50_000)
+    instruction: str = Field(default="Make this clearer, stronger, and more actionable.", max_length=5000)
+
+
+class WorkspaceAccelerateRequest(BaseModel):
+    objective: str = Field(default="", max_length=10_000)
+
+
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     details: str = Field(default="", max_length=5000)
@@ -76,6 +129,22 @@ class TaskUpdate(BaseModel):
     position: int | None = Field(default=None, ge=0)
 
 
+class GrowthItemUpdate(BaseModel):
+    status: str | None = Field(default=None, pattern="^(planned|active|in_progress|paused|completed)$")
+    progress: int | None = Field(default=None, ge=0, le=100)
+    target_date: str | None = Field(default=None, max_length=10)
+    notes: str | None = Field(default=None, max_length=5000)
+
+
+class GrowthActionUpdate(BaseModel):
+    status: str | None = Field(default=None, pattern="^(todo|doing|done|dismissed)$")
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    details: str | None = Field(default=None, max_length=5000)
+    priority: str | None = Field(default=None, pattern="^(critical|high|medium|low)$")
+    estimate_minutes: int | None = Field(default=None, ge=5, le=10080)
+    target_date: str | None = Field(default=None, max_length=10)
+
+
 def _safe_filename(filename: str) -> str:
     name = Path(filename or "recording.webm").name
     return re.sub(r"[^A-Za-z0-9._ -]+", "-", name).strip(" .-") or "recording.webm"
@@ -90,12 +159,20 @@ def create_app() -> FastAPI:
     library.ensure_project(settings.default_project, "Default workspace for captured book ideas.", "book")
     library.ensure_project("Business Ideas", "Captured business concepts and working plans.", "business")
     library.ensure_project("Project Ideas", "Captured project concepts and implementation plans.", "project")
+    library.sync_growth_from_profile()
     pipeline = TranscriptionPipeline(settings, library)
     ai = AIService(settings, library)
     stop_event = threading.Event()
     worker = threading.Thread(target=pipeline.watch, args=(stop_event,), name="knowledgeforge-watcher", daemon=True)
     analysis_lock = threading.Lock()
     analysis_queue = {"running": False, "last": None}
+
+    def profile_view(profile: dict) -> dict:
+        """Return profile metadata to the local UI without echoing extracted CV text."""
+        result = dict(profile)
+        result["cv_configured"] = bool(result.pop("cv_text", ""))
+        result.pop("cv_path", None)
+        return result
 
     def process_pending_analysis() -> dict[str, int | bool | str | None]:
         """Drain unfinished analysis once without overlapping another drain.
@@ -175,6 +252,20 @@ def create_app() -> FastAPI:
             if organized.get("project_id") and library.get_setting("auto_integrate", "true") == "true":
                 ai.reorganize_book(organized["project_id"], trigger_note_id=note_id)
 
+    def extract_profile_document(path: Path) -> str:
+        suffix = path.suffix.lower()
+        if suffix in {".txt", ".md"}:
+            return path.read_text(encoding="utf-8", errors="replace")
+        if suffix == ".pdf":
+            from pypdf import PdfReader
+
+            return "\n\n".join(page.extract_text() or "" for page in PdfReader(path).pages)
+        if suffix == ".docx":
+            from docx import Document
+
+            return "\n".join(paragraph.text for paragraph in Document(path).paragraphs)
+        raise ValueError("Profile documents must be TXT, Markdown, PDF, or DOCX.")
+
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         worker.start()
@@ -185,7 +276,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="KnowledgeForge AI",
-        version="0.7.1",
+        version="0.11.0",
         description=(
             "Security-first AI idea orchestration for developing private, unstructured source material "
             "into books, business opportunities, and projects."
@@ -352,15 +443,271 @@ def create_app() -> FastAPI:
         return next(p for p in library.list_projects() if p["id"] == project_id)
 
     @app.get("/api/opportunities")
-    def opportunities(status: str = Query(default="new", pattern="^(new|exploring|dismissed)$")):
+    def opportunities(status: str = Query(default="new", pattern="^(new|saved|validated|exploring|completed|dismissed)$")):
         return library.list_opportunities(status)
+
+    @app.post("/api/opportunities/refresh")
+    def refresh_opportunities():
+        try:
+            return ai.refresh_opportunities()
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except Exception as exc:
+            logging.exception("Opportunity refresh failed")
+            raise HTTPException(502, "Opportunity refresh failed; see private log.") from exc
+
+    @app.patch("/api/opportunities/{opportunity_id}")
+    def update_opportunity(opportunity_id: int, payload: OpportunityAction):
+        item = library.update_opportunity(opportunity_id, status=payload.status)
+        if not item:
+            raise HTTPException(404, "Opportunity not found")
+        return item
+
+    @app.post("/api/opportunities/{opportunity_id}/validate")
+    def validate_opportunity(opportunity_id: int):
+        try:
+            return ai.validate_opportunity(opportunity_id)
+        except KeyError as exc:
+            raise HTTPException(404, "Opportunity not found") from exc
+        except Exception as exc:
+            logging.exception("Opportunity validation failed")
+            raise HTTPException(502, "Internet validation failed; see private log.") from exc
 
     @app.post("/api/opportunities/{opportunity_id}/explore")
     def explore_opportunity(opportunity_id: int):
+        opportunity = library.get_opportunity(opportunity_id)
         result = library.explore_opportunity(opportunity_id)
         if result is None:
             raise HTTPException(404, "Opportunity not found")
+        try:
+            return ai.initialize_workspace(result["project_id"], opportunity)
+        except Exception as exc:
+            logging.exception("Workspace initialization failed")
+            raise HTTPException(502, "Workspace creation failed; see private log.") from exc
+
+    @app.get("/api/profile")
+    def profile():
+        return profile_view(library.get_profile())
+
+    @app.get("/manual")
+    def user_manual_markdown():
+        manual = Path(__file__).parent / "manuals" / "USER-MANUAL.md"
+        if not manual.is_file():
+            raise HTTPException(404, "User manual is not installed")
+        return FileResponse(manual, filename="KnowledgeForge-User-Manual.md", media_type="text/markdown")
+
+    @app.get("/manual.pdf")
+    def user_manual_pdf():
+        manual = Path(__file__).parent / "manuals" / "KnowledgeForge-User-Manual.pdf"
+        if not manual.is_file():
+            raise HTTPException(404, "PDF user manual is not installed")
+        return FileResponse(manual, filename=manual.name, media_type="application/pdf")
+
+    @app.put("/api/profile")
+    def update_profile(payload: ProfileUpdate):
+        result = profile_view(library.update_profile(payload.model_dump()))
+        library.sync_growth_from_profile()
         return result
+
+    @app.delete("/api/profile/suggestions")
+    def clear_profile_suggestions():
+        return profile_view(library.clear_profile_suggestions())
+
+    @app.post("/api/profile/suggest")
+    def suggest_profile():
+        try:
+            return ai.suggest_profile_updates()
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except Exception as exc:
+            logging.exception("Profile suggestion failed")
+            raise HTTPException(502, "Profile suggestion failed; see private log.") from exc
+
+    @app.get("/api/growth")
+    def growth_overview():
+        return library.growth_overview()
+
+    @app.post("/api/growth/plan")
+    def refresh_growth_plan(weeks: Literal[2, 4, 12] = 4):
+        try:
+            return ai.refresh_growth_plan(weeks)
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except Exception as exc:
+            logging.exception("Growth planning failed")
+            raise HTTPException(502, "Growth planning failed; see private log.") from exc
+
+    @app.patch("/api/growth/items/{item_id}")
+    def update_growth_item(item_id: int, payload: GrowthItemUpdate):
+        item = library.update_growth_item(item_id, payload.model_dump(exclude_unset=True))
+        if item is None:
+            raise HTTPException(404, "Growth item not found")
+        return item
+
+    @app.patch("/api/growth/actions/{action_id}")
+    def update_growth_action(action_id: int, payload: GrowthActionUpdate):
+        action = library.update_growth_action(action_id, payload.model_dump(exclude_unset=True))
+        if action is None:
+            raise HTTPException(404, "Growth action not found")
+        return action
+
+    @app.post("/api/profile/cv")
+    async def upload_profile_cv(file: Annotated[UploadFile, File()]):
+        destination = settings.imports / "profile" / f"{uuid4().hex}-{_safe_filename(file.filename or 'cv')}"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        payload = await file.read(settings.max_upload_mb * 1024 * 1024 + 1)
+        if len(payload) > settings.max_upload_mb * 1024 * 1024:
+            raise HTTPException(413, "File exceeds configured upload limit")
+        destination.write_bytes(payload)
+        try:
+            text = extract_profile_document(destination)
+        except ValueError as exc:
+            destination.unlink(missing_ok=True)
+            raise HTTPException(415, str(exc)) from exc
+        return profile_view(
+            library.update_profile(
+                {
+                    "cv_text": text[:200_000],
+                    "cv_filename": file.filename or destination.name,
+                    "cv_path": str(destination),
+                }
+            )
+        )
+
+    def resolve_profile_cv() -> Path:
+        """Resolve only the CV path recorded in the private profile."""
+        profile = library.get_profile()
+        stored = Path(profile.get("cv_path", ""))
+        profile_root = (settings.imports / "profile").resolve()
+        try:
+            candidate = stored.resolve()
+            candidate.relative_to(profile_root)
+        except (OSError, ValueError):
+            raise HTTPException(404, "No stored CV is available") from None
+        if not candidate.is_file():
+            raise HTTPException(404, "The stored CV file is missing")
+        return candidate
+
+    @app.get("/api/profile/cv")
+    def download_profile_cv():
+        destination = resolve_profile_cv()
+        profile = library.get_profile()
+        return FileResponse(
+            destination,
+            filename=profile.get("cv_filename") or destination.name,
+            media_type=mimetypes.guess_type(destination.name)[0] or "application/octet-stream",
+        )
+
+    @app.delete("/api/profile/cv")
+    def remove_profile_cv():
+        destination = resolve_profile_cv()
+        destination.unlink(missing_ok=True)
+        return profile_view(library.update_profile({"cv_text": "", "cv_filename": "", "cv_path": ""}))
+
+    @app.get("/api/workspaces/{project_id}")
+    def workspace(project_id: int):
+        try:
+            return library.workspace_snapshot(project_id)
+        except KeyError as exc:
+            raise HTTPException(404, "Workspace not found") from exc
+
+    @app.patch("/api/projects/{project_id}")
+    def update_project(project_id: int, payload: ProjectUpdate):
+        try:
+            project = library.update_project(project_id, **payload.model_dump())
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        if project is None:
+            raise HTTPException(404, "Workspace not found")
+        return project
+
+    @app.delete("/api/projects/{project_id}", status_code=204)
+    def delete_project(project_id: int):
+        if not library.delete_project(project_id):
+            raise HTTPException(404, "Workspace not found")
+        return Response(status_code=204)
+
+    @app.post("/api/workspaces/{project_id}/initialize")
+    def initialize_workspace(project_id: int):
+        try:
+            return ai.initialize_workspace(project_id)
+        except KeyError as exc:
+            raise HTTPException(404, "Workspace not found") from exc
+        except Exception as exc:
+            logging.exception("Workspace initialization failed")
+            raise HTTPException(502, "Workspace initialization failed; see private log.") from exc
+
+    @app.post("/api/workspaces/{project_id}/cards", status_code=201)
+    def add_workspace_card(project_id: int, payload: WorkspaceCardCreate):
+        try:
+            library.get_book(project_id)
+        except KeyError as exc:
+            raise HTTPException(404, "Workspace not found") from exc
+        return library.add_workspace_card(project_id, **payload.model_dump())
+
+    @app.patch("/api/workspaces/{project_id}/cards/{card_id}")
+    def update_workspace_card(project_id: int, card_id: int, payload: WorkspaceCardUpdate):
+        card = library.update_workspace_card(project_id, card_id, **payload.model_dump())
+        if card is None:
+            raise HTTPException(404, "Workspace card not found")
+        return card
+
+    @app.post("/api/workspaces/{project_id}/research")
+    def research_workspace(project_id: int, payload: WorkspaceResearchRequest):
+        try:
+            return ai.research_workspace(project_id, payload.query)
+        except KeyError as exc:
+            raise HTTPException(404, "Workspace not found") from exc
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except Exception as exc:
+            logging.exception("Workspace research failed")
+            raise HTTPException(502, "Workspace research failed; see private log.") from exc
+
+    @app.post("/api/workspaces/{project_id}/improve")
+    def improve_workspace_selection(project_id: int, payload: WorkspaceImproveRequest):
+        try:
+            return ai.improve_workspace_selection(project_id, payload.selection, payload.instruction)
+        except KeyError as exc:
+            raise HTTPException(404, "Workspace not found") from exc
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except Exception as exc:
+            logging.exception("Workspace improvement failed")
+            raise HTTPException(502, "Workspace improvement failed; see private log.") from exc
+
+    @app.post("/api/workspaces/{project_id}/accelerate")
+    def accelerate_workspace(project_id: int, payload: WorkspaceAccelerateRequest):
+        try:
+            return ai.accelerate_workspace(project_id, payload.objective)
+        except KeyError as exc:
+            raise HTTPException(404, "Workspace not found") from exc
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except Exception as exc:
+            logging.exception("Workspace acceleration failed")
+            raise HTTPException(502, "Workspace acceleration failed; see private log.") from exc
+
+    @app.post("/api/workspaces/{project_id}/complete")
+    def complete_workspace(project_id: int, payload: CompletionConfirm):
+        if not payload.confirmed:
+            raise HTTPException(422, "Completion must be explicitly confirmed.")
+        try:
+            return ai.complete_workspace(project_id)
+        except KeyError as exc:
+            raise HTTPException(404, "Workspace not found") from exc
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except Exception as exc:
+            logging.exception("Workspace completion review failed")
+            raise HTTPException(502, "Workspace completion failed; see private log.") from exc
+
+    @app.post("/api/workspaces/{project_id}/reopen")
+    def reopen_workspace(project_id: int):
+        try:
+            return library.reopen_workspace(project_id)
+        except KeyError as exc:
+            raise HTTPException(404, "Workspace not found") from exc
 
     @app.get("/api/notes")
     def notes(
@@ -506,5 +853,22 @@ def create_app() -> FastAPI:
         if not path.exists():
             raise HTTPException(404, "Archived audio is unavailable")
         return FileResponse(path, media_type=mimetypes.guess_type(path.name)[0] or "application/octet-stream")
+
+    @app.delete("/api/notes/{note_id}/audio")
+    def delete_audio(note_id: int):
+        """Delete only KnowledgeForge-managed source media, never arbitrary files."""
+        item = library.get_note(note_id)
+        if not item:
+            raise HTTPException(404, "Note not found")
+        if not item["audio_path"]:
+            return {"deleted": False, "message": "Source audio was already removed."}
+        path = Path(item["audio_path"]).resolve()
+        managed_roots = (settings.recordings.resolve(), settings.imports.resolve())
+        if not any(path.is_relative_to(root) for root in managed_roots):
+            raise HTTPException(409, "This source is outside KnowledgeForge-managed storage and was not deleted.")
+        if path.exists() and path.is_file():
+            path.unlink()
+        library.clear_note_audio(note_id)
+        return {"deleted": True, "transcript_preserved": True}
 
     return app
