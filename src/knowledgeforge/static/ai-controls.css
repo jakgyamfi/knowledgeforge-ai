@@ -72,6 +72,14 @@
 .priority.low { color: var(--muted); }
 .studioCards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:18px}.studioCollection{background:#0b1713;border:1px solid var(--line);border-radius:12px;padding:14px}.studioCollection>h3{text-transform:capitalize;color:var(--accent2);margin:0 0 10px}.studioCollection>div{display:grid;gap:8px}.studioCard{border-top:1px solid var(--line);padding-top:9px}.studioCard:first-child{border-top:0;padding-top:0}.studioCard p{white-space:pre-wrap;color:var(--muted);margin:4px 0}.studioCard small{color:var(--muted)}
 
+/* Bound every Studio board so long evidence/goal collections scroll internally. */
+.studioCards{align-items:start}
+.studioCollection{display:flex;flex-direction:column;max-height:420px;min-width:0}
+.studioCollection>h3{flex:0 0 auto}
+.studioCollection>div{overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:6px}
+.studioCard{min-width:0}
+.studioCard p,.studioCard small{overflow-wrap:anywhere}
+
 @media (max-width: 900px) {
   .bookGrid { grid-template-columns: 1fr; }
   .bookHead, .aiBar { align-items: stretch; flex-direction: column; }
