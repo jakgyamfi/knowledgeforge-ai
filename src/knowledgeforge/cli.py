@@ -16,6 +16,8 @@ from .logging_config import configure_private_logging
 from .pipeline import TranscriptionPipeline
 from .secrets import ProviderSecrets, SecretStoreError
 
+logger = logging.getLogger(__name__)
+
 
 def _provider_secret(settings: Settings, provider: str) -> str:
     """Resolve a friendly provider ID to its configured credential name."""
@@ -130,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             pipeline.watch()
         except KeyboardInterrupt:
-            logging.info("Watcher stopped by user.")
+            logger.info("Watcher stopped by user.")
         return 0
 
     # Import web-only dependencies lazily so batch/verification failures remain

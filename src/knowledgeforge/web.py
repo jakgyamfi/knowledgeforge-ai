@@ -1,6 +1,7 @@
 """FastAPI application: capture, transcription, organization, projects, and chat."""
 
 from __future__ import annotations
+
 import logging
 import mimetypes
 import re
@@ -10,15 +11,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Literal
 from uuid import uuid4
+
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, SecretStr
+
 from .ai import AIService
 from .config import Settings
 from .library import Library
 from .organizer import organize_transcript
 from .pipeline import AUDIO_EXTENSIONS, TranscriptionPipeline
+
+logger = logging.getLogger(__name__)
 
 
 class NoteUpdate(BaseModel):
@@ -204,7 +209,7 @@ def create_app() -> FastAPI:
                 except Exception as exc:
                     failed += 1
                     library.mark_analysis_failed(note_id, str(exc))
-                    logging.exception("Queued AI analysis failed for note %s", note_id)
+                    logger.exception("Queued AI analysis failed for note %s", note_id)
             return {"accepted": True, "processed": processed, "failed": failed, "message": "Queue pass complete."}
         finally:
             analysis_queue["running"] = False
@@ -320,7 +325,7 @@ def create_app() -> FastAPI:
         if provider["id"] != "ollama" and payload.model not in provider["models"]:
             raise HTTPException(422, "Unsupported catalog model")
         library.set_settings({"ai_provider": payload.provider, "ai_model": payload.model.strip()})
-        logging.info("AI selection changed to %s / %s", payload.provider, payload.model)
+        logger.info("AI selection changed to %s / %s", payload.provider, payload.model)
         background.add_task(start_pending_analysis)
         return ai.options()
 
@@ -379,7 +384,7 @@ def create_app() -> FastAPI:
         except RuntimeError as exc:
             raise HTTPException(503, str(exc)) from exc
         except Exception as exc:
-            logging.exception("Book reorganization failed")
+            logger.exception("Book reorganization failed")
             raise HTTPException(502, "Book reorganization failed; see private log.") from exc
 
     @app.get("/api/projects/{project_id}/tasks")
@@ -414,7 +419,7 @@ def create_app() -> FastAPI:
         except RuntimeError as exc:
             raise HTTPException(503, str(exc)) from exc
         except Exception as exc:
-            logging.exception("Execution-plan refresh failed")
+            logger.exception("Execution-plan refresh failed")
             raise HTTPException(502, "Execution-plan refresh failed; see private log.") from exc
 
     @app.get("/api/books/{project_id}/export")
@@ -453,7 +458,7 @@ def create_app() -> FastAPI:
         except RuntimeError as exc:
             raise HTTPException(503, str(exc)) from exc
         except Exception as exc:
-            logging.exception("Opportunity refresh failed")
+            logger.exception("Opportunity refresh failed")
             raise HTTPException(502, "Opportunity refresh failed; see private log.") from exc
 
     @app.patch("/api/opportunities/{opportunity_id}")
@@ -470,7 +475,7 @@ def create_app() -> FastAPI:
         except KeyError as exc:
             raise HTTPException(404, "Opportunity not found") from exc
         except Exception as exc:
-            logging.exception("Opportunity validation failed")
+            logger.exception("Opportunity validation failed")
             raise HTTPException(502, "Internet validation failed; see private log.") from exc
 
     @app.post("/api/opportunities/{opportunity_id}/explore")
@@ -482,7 +487,7 @@ def create_app() -> FastAPI:
         try:
             return ai.initialize_workspace(result["project_id"], opportunity)
         except Exception as exc:
-            logging.exception("Workspace initialization failed")
+            logger.exception("Workspace initialization failed")
             raise HTTPException(502, "Workspace creation failed; see private log.") from exc
 
     @app.get("/api/profile")
@@ -520,7 +525,7 @@ def create_app() -> FastAPI:
         except RuntimeError as exc:
             raise HTTPException(503, str(exc)) from exc
         except Exception as exc:
-            logging.exception("Profile suggestion failed")
+            logger.exception("Profile suggestion failed")
             raise HTTPException(502, "Profile suggestion failed; see private log.") from exc
 
     @app.get("/api/growth")
@@ -534,7 +539,7 @@ def create_app() -> FastAPI:
         except RuntimeError as exc:
             raise HTTPException(503, str(exc)) from exc
         except Exception as exc:
-            logging.exception("Growth planning failed")
+            logger.exception("Growth planning failed")
             raise HTTPException(502, "Growth planning failed; see private log.") from exc
 
     @app.patch("/api/growth/items/{item_id}")
@@ -634,7 +639,7 @@ def create_app() -> FastAPI:
         except KeyError as exc:
             raise HTTPException(404, "Workspace not found") from exc
         except Exception as exc:
-            logging.exception("Workspace initialization failed")
+            logger.exception("Workspace initialization failed")
             raise HTTPException(502, "Workspace initialization failed; see private log.") from exc
 
     @app.post("/api/workspaces/{project_id}/cards", status_code=201)
@@ -661,7 +666,7 @@ def create_app() -> FastAPI:
         except RuntimeError as exc:
             raise HTTPException(503, str(exc)) from exc
         except Exception as exc:
-            logging.exception("Workspace research failed")
+            logger.exception("Workspace research failed")
             raise HTTPException(502, "Workspace research failed; see private log.") from exc
 
     @app.post("/api/workspaces/{project_id}/improve")
@@ -673,7 +678,7 @@ def create_app() -> FastAPI:
         except RuntimeError as exc:
             raise HTTPException(503, str(exc)) from exc
         except Exception as exc:
-            logging.exception("Workspace improvement failed")
+            logger.exception("Workspace improvement failed")
             raise HTTPException(502, "Workspace improvement failed; see private log.") from exc
 
     @app.post("/api/workspaces/{project_id}/accelerate")
@@ -685,7 +690,7 @@ def create_app() -> FastAPI:
         except RuntimeError as exc:
             raise HTTPException(503, str(exc)) from exc
         except Exception as exc:
-            logging.exception("Workspace acceleration failed")
+            logger.exception("Workspace acceleration failed")
             raise HTTPException(502, "Workspace acceleration failed; see private log.") from exc
 
     @app.post("/api/workspaces/{project_id}/complete")
@@ -699,7 +704,7 @@ def create_app() -> FastAPI:
         except RuntimeError as exc:
             raise HTTPException(409, str(exc)) from exc
         except Exception as exc:
-            logging.exception("Workspace completion review failed")
+            logger.exception("Workspace completion review failed")
             raise HTTPException(502, "Workspace completion failed; see private log.") from exc
 
     @app.post("/api/workspaces/{project_id}/reopen")
@@ -751,7 +756,7 @@ def create_app() -> FastAPI:
             raise HTTPException(503, str(exc)) from exc
         except Exception as exc:
             library.mark_analysis_failed(note_id, str(exc))
-            logging.exception("Analysis failed")
+            logger.exception("Analysis failed")
             raise HTTPException(502, "AI analysis failed; details are in the private log.") from exc
 
     @app.post("/api/analysis/process-pending", status_code=202)
@@ -788,7 +793,7 @@ def create_app() -> FastAPI:
         except RuntimeError as exc:
             raise HTTPException(503, str(exc)) from exc
         except Exception as exc:
-            logging.exception("Library chat failed")
+            logger.exception("Library chat failed")
             raise HTTPException(502, "AI chat failed; see private log.") from exc
 
     @app.post("/api/scan", status_code=202)
@@ -817,7 +822,7 @@ def create_app() -> FastAPI:
             raise
         finally:
             await file.close()
-        logging.info("Accepted upload: %s", destination.name)
+        logger.info("Accepted upload: %s", destination.name)
         return {"accepted": True, "filename": destination.name}
 
     @app.post("/api/import", status_code=202)

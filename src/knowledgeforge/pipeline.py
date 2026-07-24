@@ -14,9 +14,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .ai import AIService
 from .config import Settings
 from .library import Library
-from .ai import AIService
+
+logger = logging.getLogger(__name__)
 
 AUDIO_EXTENSIONS = {
     ".wav",
@@ -56,7 +58,7 @@ class TranscriptionPipeline:
                         "Whisper is missing. Activate the virtual environment and "
                         "run: python -m pip install -r requirements.txt"
                     ) from exc
-                logging.info("Loading Whisper model '%s' on %s", self.settings.model, self.settings.device)
+                logger.info("Loading Whisper model '%s' on %s", self.settings.model, self.settings.device)
                 self._model = whisper.load_model(self.settings.model, device=self.settings.device)
         return self._model
 
@@ -83,7 +85,7 @@ class TranscriptionPipeline:
     @staticmethod
     def _request_local_file(source: Path) -> None:
         """Open one byte so a cloud provider hydrates an online-only file."""
-        logging.info("Ensuring recording is available locally: %s", source.name)
+        logger.info("Ensuring recording is available locally: %s", source.name)
         with source.open("rb") as audio:
             audio.read(1)
 
@@ -103,7 +105,7 @@ class TranscriptionPipeline:
         if archive.exists() and archive.stat().st_size == source.stat().st_size:
             return
         shutil.copy2(source, archive)
-        logging.info("Archived local copy: %s", archive)
+        logger.info("Archived local copy: %s", archive)
 
     def process(self, source: Path, *, overwrite: bool = False) -> int:
         """Process one recording and return its private library record ID."""
@@ -118,7 +120,7 @@ class TranscriptionPipeline:
             options: dict[str, Any] = {"fp16": self.settings.device != "cpu"}
             if self.settings.language:
                 options["language"] = self.settings.language
-            logging.info("Transcribing %s", source)
+            logger.info("Transcribing %s", source)
             result = model.transcribe(str(source), **options)
             transcript = str(result.get("text", "")).strip()
             self._atomic_text(transcript_path, transcript + "\n")
@@ -132,7 +134,7 @@ class TranscriptionPipeline:
             }
             self._atomic_text(metadata_path, json.dumps(metadata, indent=2) + "\n")
             self._archive_copy(source, archive_path)
-            logging.info("Saved transcript: %s", transcript_path)
+            logger.info("Saved transcript: %s", transcript_path)
 
         note_id = self.library.upsert_transcript(
             source_name=str(self._relative_path(source)),
@@ -142,14 +144,14 @@ class TranscriptionPipeline:
         )
         if self.ai.enabled:
             try:
-                logging.info("Analyzing and filing note %s", note_id)
+                logger.info("Analyzing and filing note %s", note_id)
                 organized = self.ai.analyze(note_id)
                 if organized.get("project_id") and self.library.get_setting("auto_integrate", "true") == "true":
-                    logging.info("Integrating note %s into book project %s", note_id, organized["project_id"])
+                    logger.info("Integrating note %s into book project %s", note_id, organized["project_id"])
                     self.ai.reorganize_book(organized["project_id"], trigger_note_id=note_id)
             except Exception as exc:
                 self.library.mark_analysis_failed(note_id, str(exc))
-                logging.exception("AI analysis failed for note %s; retry it from the app.", note_id)
+                logger.exception("AI analysis failed for note %s; retry it from the app.", note_id)
         return note_id
 
     def run_once(self, *, overwrite: bool = False) -> dict[str, int]:
@@ -165,17 +167,17 @@ class TranscriptionPipeline:
                 completed += 1
             except OSError as exc:
                 failed += 1
-                logging.warning("Recording unavailable; will retry %s: %s", source.name, exc)
+                logger.warning("Recording unavailable; will retry %s: %s", source.name, exc)
             except Exception:
                 failed += 1
-                logging.exception("Failed to process %s; later scans will retry.", source.name)
+                logger.exception("Failed to process %s; later scans will retry.", source.name)
         return {"completed": completed, "failed": failed}
 
     def watch(self, stop_event: threading.Event | None = None) -> None:
         """Poll until signaled; used by both CLI and web application lifespan."""
         stop_event = stop_event or threading.Event()
-        logging.info("Watching %s every %.1f seconds", self.settings.inbox, self.settings.poll_seconds)
+        logger.info("Watching %s every %.1f seconds", self.settings.inbox, self.settings.poll_seconds)
         while not stop_event.is_set():
             self.run_once()
             stop_event.wait(self.settings.poll_seconds)
-        logging.info("Watcher stopped.")
+        logger.info("Watcher stopped.")

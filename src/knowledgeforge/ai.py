@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
+import base64
+import ipaddress
 import json
 import logging
-import re
-import ipaddress
-import socket
-import urllib.request
-import urllib.parse
-import xml.etree.ElementTree as ET
-import base64
 import mimetypes
+import re
+import socket
 import time
-from html.parser import HTMLParser
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
 from datetime import date, datetime, timezone
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Literal, TypeVar
 
@@ -24,6 +24,8 @@ from .config import Settings
 from .library import Library
 from .logging_config import audit_egress
 from .secrets import ProviderSecrets
+
+logger = logging.getLogger(__name__)
 
 
 class _ReadableHTML(HTMLParser):
@@ -933,7 +935,7 @@ class AIService:
         except Exception:
             # Studio-card refresh is helpful but must not roll back the primary
             # working document when a provider times out.
-            logging.exception("Automatic studio refresh failed for project %s", project_id)
+            logger.exception("Automatic studio refresh failed for project %s", project_id)
         # Content integration and execution planning are one workflow. Library
         # preserves completed and owner-authored tasks during this refresh.
         try:
@@ -941,7 +943,7 @@ class AIService:
         except Exception:
             # A planning-provider failure must not roll back a successfully
             # integrated manuscript or project document.
-            logging.exception("Automatic execution-plan refresh failed for project %s", project_id)
+            logger.exception("Automatic execution-plan refresh failed for project %s", project_id)
         return self.library.get_book(project_id)
 
     def refresh_plan(self, project_id: int, *, reason: str = "Workspace updated") -> dict:
@@ -1065,7 +1067,7 @@ class AIService:
             try:
                 extract = self._fetch_public_page(result["url"])
             except Exception:
-                logging.info("Public research page could not be read: %s", result["url"])
+                logger.info("Public research page could not be read: %s", result["url"])
                 extract = ""
             if extract:
                 pages.append({"title": result["title"], "url": result["url"], "extract": extract})
