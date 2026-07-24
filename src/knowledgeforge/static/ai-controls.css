@@ -74,11 +74,15 @@
 
 /* Bound every Studio board so long evidence/goal collections scroll internally. */
 .studioCards{align-items:start}
-.studioCollection{display:flex;flex-direction:column;max-height:420px;min-width:0}
+.studioCollection{display:flex;flex-direction:column;height:420px;max-height:420px;min-width:0;overflow:hidden}
 .studioCollection>h3{flex:0 0 auto}
-.studioCollection>div{overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:6px}
+.studioCollection>div{flex:1 1 auto;min-height:0;overflow-y:auto!important;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:6px}
 .studioCard{min-width:0}
 .studioCard p,.studioCard small{overflow-wrap:anywhere}
+
+@media(max-width:800px){
+  .studioCollection{height:360px;max-height:360px}
+}
 
 @media (max-width: 900px) {
   .bookGrid { grid-template-columns: 1fr; }
